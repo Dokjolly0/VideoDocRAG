@@ -7,39 +7,41 @@
 3. [Risultato finale atteso](#3-risultato-finale-atteso)
 4. [Principi di progettazione](#4-principi-di-progettazione)
 5. [Architettura generale](#5-architettura-generale)
-6. [Stack tecnologico consigliato](#6-stack-tecnologico-consigliato)
-7. [Struttura del progetto](#7-struttura-del-progetto)
-8. [Formato dei dati e metadati](#8-formato-dei-dati-e-metadati)
-9. [Pipeline completa](#9-pipeline-completa)
-10. [Fase 1 — Inizializzazione del progetto](#10-fase-1--inizializzazione-del-progetto)
-11. [Fase 2 — Ingestion dei video](#11-fase-2--ingestion-dei-video)
-12. [Fase 3 — Estrazione audio](#12-fase-3--estrazione-audio)
-13. [Fase 4 — Trascrizione audio](#13-fase-4--trascrizione-audio)
-14. [Fase 5 — Estrazione frame e screenshot](#14-fase-5--estrazione-frame-e-screenshot)
-15. [Fase 6 — OCR delle schermate](#15-fase-6--ocr-delle-schermate)
-16. [Fase 7 — Riconoscimento ed estrazione del codice](#16-fase-7--riconoscimento-ed-estrazione-del-codice)
-17. [Fase 8 — Chunking intelligente](#17-fase-8--chunking-intelligente)
-18. [Fase 9 — Creazione degli embedding](#18-fase-9--creazione-degli-embedding)
-19. [Fase 10 — Indicizzazione nel vector database](#19-fase-10--indicizzazione-nel-vector-database)
-20. [Fase 11 — Retrieval e RAG](#20-fase-11--retrieval-e-rag)
-21. [Fase 12 — Generazione dell’indice della documentazione](#21-fase-12--generazione-dellindice-della-documentazione)
-22. [Fase 13 — Generazione delle sezioni Markdown](#22-fase-13--generazione-delle-sezioni-markdown)
-23. [Fase 14 — Revisione, validazione e controllo qualità](#23-fase-14--revisione-validazione-e-controllo-qualità)
-24. [Fase 15 — Export della documentazione](#24-fase-15--export-della-documentazione)
-25. [CLI del progetto](#25-cli-del-progetto)
-26. [Configurazione del progetto](#26-configurazione-del-progetto)
-27. [Schema database SQLite](#27-schema-database-sqlite)
-28. [Schema Qdrant](#28-schema-qdrant)
-29. [Prompt principali](#29-prompt-principali)
-30. [Gestione del codice estratto dai video](#30-gestione-del-codice-estratto-dai-video)
-31. [Gestione dei materiali allegati](#31-gestione-dei-materiali-allegati)
-32. [Modalità operative](#32-modalità-operative)
-33. [Interfaccia web opzionale](#33-interfaccia-web-opzionale)
-34. [Roadmap di sviluppo](#34-roadmap-di-sviluppo)
-35. [Best practice](#35-best-practice)
-36. [Limiti del sistema](#36-limiti-del-sistema)
-37. [Esempio di output Markdown generato](#37-esempio-di-output-markdown-generato)
-38. [Conclusione](#38-conclusione)
+6. [Organizzazione modulare: core, CLI e GUI](#6-organizzazione-modulare-core-cli-e-gui)
+7. [Stack tecnologico consigliato](#7-stack-tecnologico-consigliato)
+8. [Struttura del progetto](#8-struttura-del-progetto)
+9. [Formato dei dati e metadati](#9-formato-dei-dati-e-metadati)
+10. [Pipeline completa](#10-pipeline-completa)
+11. [Modulo core](#11-modulo-core)
+12. [Modulo CLI](#12-modulo-cli)
+13. [Modulo GUI](#13-modulo-gui)
+14. [Fase 1 — Inizializzazione del progetto](#14-fase-1--inizializzazione-del-progetto)
+15. [Fase 2 — Ingestion dei video](#15-fase-2--ingestion-dei-video)
+16. [Fase 3 — Estrazione audio](#16-fase-3--estrazione-audio)
+17. [Fase 4 — Trascrizione audio](#17-fase-4--trascrizione-audio)
+18. [Fase 5 — Estrazione frame e screenshot](#18-fase-5--estrazione-frame-e-screenshot)
+19. [Fase 6 — OCR delle schermate](#19-fase-6--ocr-delle-schermate)
+20. [Fase 7 — Riconoscimento ed estrazione del codice](#20-fase-7--riconoscimento-ed-estrazione-del-codice)
+21. [Fase 8 — Chunking intelligente](#21-fase-8--chunking-intelligente)
+22. [Fase 9 — Creazione degli embedding](#22-fase-9--creazione-degli-embedding)
+23. [Fase 10 — Indicizzazione nel vector database](#23-fase-10--indicizzazione-nel-vector-database)
+24. [Fase 11 — Retrieval e RAG](#24-fase-11--retrieval-e-rag)
+25. [Fase 12 — Generazione dell’indice della documentazione](#25-fase-12--generazione-dellindice-della-documentazione)
+26. [Fase 13 — Generazione delle sezioni Markdown](#26-fase-13--generazione-delle-sezioni-markdown)
+27. [Fase 14 — Revisione, validazione e controllo qualità](#27-fase-14--revisione-validazione-e-controllo-qualità)
+28. [Fase 15 — Export della documentazione](#28-fase-15--export-della-documentazione)
+29. [Configurazione del progetto](#29-configurazione-del-progetto)
+30. [Schema database SQLite](#30-schema-database-sqlite)
+31. [Schema Qdrant](#31-schema-qdrant)
+32. [Prompt principali](#32-prompt-principali)
+33. [Gestione del codice estratto dai video](#33-gestione-del-codice-estratto-dai-video)
+34. [Gestione dei materiali allegati](#34-gestione-dei-materiali-allegati)
+35. [Modalità operative](#35-modalità-operative)
+36. [Roadmap di sviluppo](#36-roadmap-di-sviluppo)
+37. [Best practice](#37-best-practice)
+38. [Limiti del sistema](#38-limiti-del-sistema)
+39. [Esempio di output Markdown generato](#39-esempio-di-output-markdown-generato)
+40. [Conclusione](#40-conclusione)
 
 ---
 
@@ -61,7 +63,7 @@ In sintesi, il progetto deve permettere di passare da questo scenario:
 Cartella con video workshop di molte ore
 ```
 
-a questo risultato:
+A questo risultato:
 
 ```text
 Documentazione Markdown dettagliata
@@ -98,7 +100,7 @@ Un semplice sistema RAG basato solo sulla trascrizione audio non è sufficiente,
 Ora copiamo questo comando nel terminale.
 ```
 
-ma il comando è visibile solo a schermo. In questo caso la trascrizione audio non contiene il codice, quindi il sistema deve anche analizzare le immagini del video tramite OCR o modelli multimodali.
+Ma il comando è visibile solo a schermo. In questo caso la trascrizione audio non contiene il codice, quindi il sistema deve anche analizzare le immagini del video tramite OCR o modelli multimodali.
 
 Il progetto risolve questo problema creando una pipeline che combina:
 
@@ -147,9 +149,9 @@ Ogni sezione della documentazione deve contenere:
 - eventuali errori comuni;
 - riferimenti alle fonti.
 
-Un esempio di struttura attesa per una sezione:
+Esempio di struttura attesa per una sezione:
 
-```markdown
+````markdown
 # Configurazione iniziale del progetto
 
 **Video di riferimento:** `workshop_01_installazione.mp4`  
@@ -176,7 +178,7 @@ npm run dev
 
 ## Spiegazione del codice
 
-Il comando `npm create vite@latest my-app` crea una nuova applicazione...
+Il comando `npm create vite@latest my-app` crea una nuova applicazione.
 
 ## Risultato atteso
 
@@ -186,23 +188,27 @@ Al termine della procedura, l’applicazione dovrebbe essere disponibile in loca
 
 - Video: `workshop_01_installazione.mp4`
 - Timestamp: `00:18:20–00:24:55`
-```
+````
 
 ---
 
 # 4. Principi di progettazione
 
-Il progetto deve essere costruito seguendo alcuni principi fondamentali.
-
 ## 4.1 Modularità
 
 Ogni fase della pipeline deve essere indipendente. La trascrizione, l’OCR, il chunking, l’indicizzazione e la generazione documentale devono essere moduli separati.
 
-Questo permette di sostituire facilmente un componente con un altro. Per esempio, si potrebbe iniziare con PaddleOCR e in futuro sostituirlo con Surya OCR o con un modello multimodale locale.
+La modularità si applica anche a livello architetturale. Il progetto deve essere separato in tre macro-moduli:
+
+- `core`, che contiene la logica applicativa e la pipeline;
+- `cli`, che espone i comandi da terminale;
+- `gui`, che fornisce un’interfaccia web opzionale.
+
+Questa separazione permette di usare lo stesso motore applicativo da CLI, da GUI o da automazioni future.
 
 ## 4.2 Tracciabilità
 
-Ogni informazione generata deve poter essere ricondotta alla fonte originale. Questo significa che ogni chunk deve conservare:
+Ogni informazione generata deve poter essere ricondotta alla fonte originale. Ogni chunk deve conservare:
 
 - nome del video;
 - timestamp di inizio;
@@ -290,6 +296,31 @@ Revisione e validazione
 Export documentazione
 ```
 
+Dal punto di vista software, la stessa pipeline viene esposta da tre livelli distinti:
+
+```text
+core
+  ├── modelli dati
+  ├── servizi pipeline
+  ├── storage
+  ├── RAG
+  ├── generatori Markdown
+  └── validazione
+
+cli
+  ├── comandi Typer
+  ├── output testuale
+  ├── comandi batch
+  └── ispezione progetto
+
+gui
+  ├── API FastAPI
+  ├── dashboard web
+  ├── player video
+  ├── editor Markdown
+  └── chat RAG
+```
+
 Il sistema avrà due modalità principali:
 
 1. modalità batch, per processare video e generare documentazione;
@@ -301,9 +332,78 @@ La modalità interrogazione serve a usare il contenuto dei video come base di co
 
 ---
 
-# 6. Stack tecnologico consigliato
+# 6. Organizzazione modulare: core, CLI e GUI
 
-## 6.1 Linguaggio principale
+Il progetto deve essere diviso in tre moduli principali.
+
+## 6.1 Core
+
+Il modulo `core` contiene tutta la logica indipendente dall’interfaccia utente.
+
+Responsabilità principali:
+
+- gestione configurazione;
+- modelli dati;
+- ingestion video;
+- estrazione audio;
+- trascrizione;
+- estrazione frame;
+- OCR;
+- riconoscimento codice;
+- chunking;
+- embedding;
+- indicizzazione Qdrant;
+- retrieval RAG;
+- generazione documentazione;
+- revisione e validazione;
+- export.
+
+Il `core` non deve dipendere né dalla CLI né dalla GUI.
+
+Regola architetturale:
+
+```text
+core non importa cli
+core non importa gui
+cli importa core
+gui importa core
+```
+
+## 6.2 CLI
+
+Il modulo `cli` espone il sistema da terminale.
+
+Responsabilità principali:
+
+- definire i comandi `videodoc`;
+- validare gli argomenti utente;
+- chiamare i servizi del `core`;
+- mostrare stato, progressi, errori e risultati;
+- permettere esecuzione batch e automazione.
+
+La CLI deve essere leggera. Non deve contenere logica di pipeline complessa.
+
+## 6.3 GUI
+
+Il modulo `gui` fornisce un’interfaccia web opzionale per utenti meno tecnici.
+
+Responsabilità principali:
+
+- upload o selezione dei video;
+- visualizzazione dello stato pipeline;
+- consultazione trascrizioni, OCR e chunk;
+- revisione blocchi codice;
+- editor Markdown;
+- chat RAG;
+- export documentazione.
+
+La GUI deve usare il `core` tramite servizi applicativi o API interne, senza duplicare la logica della CLI.
+
+---
+
+# 7. Stack tecnologico consigliato
+
+## 7.1 Linguaggio principale
 
 Il linguaggio consigliato è Python, perché dispone di ottime librerie per:
 
@@ -315,74 +415,111 @@ Il linguaggio consigliato è Python, perché dispone di ottime librerie per:
 - orchestrazione RAG;
 - generazione file Markdown.
 
-## 6.2 Componenti consigliati
+## 7.2 Componenti consigliati
 
-| Componente | Strumento consigliato |
-|---|---|
-| CLI | Typer |
-| Configurazione | YAML + Pydantic |
-| Estrazione audio/video | FFmpeg |
-| Trascrizione | faster-whisper |
-| OCR | PaddleOCR, Surya OCR o Tesseract |
-| Scene detection | PySceneDetect |
-| Embedding | bge-m3, nomic-embed-text, multilingual-e5-large |
-| Vector DB | Qdrant |
-| Database strutturato | SQLite |
-| LLM locale | Qwen Coder, Llama, Mistral, DeepSeek Coder |
-| Orchestrazione RAG | LlamaIndex o LangChain |
-| Export documentazione | Markdown, MkDocs, Docusaurus |
-| UI opzionale | FastAPI + React oppure Streamlit |
+| Area | Componente | Strumento consigliato |
+|---|---|---|
+| Core | Configurazione | YAML + Pydantic |
+| Core | Estrazione audio/video | FFmpeg |
+| Core | Trascrizione | faster-whisper |
+| Core | OCR | PaddleOCR, Surya OCR o Tesseract |
+| Core | Scene detection | PySceneDetect |
+| Core | Embedding | bge-m3, nomic-embed-text, multilingual-e5-large |
+| Core | Vector DB | Qdrant |
+| Core | Database strutturato | SQLite |
+| Core | LLM locale | Qwen Coder, Llama, Mistral, DeepSeek Coder |
+| Core | Orchestrazione RAG | LlamaIndex o LangChain |
+| Core | Export documentazione | Markdown, MkDocs, Docusaurus |
+| CLI | Framework comandi | Typer |
+| GUI | Backend | FastAPI |
+| GUI | Frontend | React, Next.js o Streamlit |
+| GUI | Worker opzionale | Celery, RQ o Dramatiq |
 
 ---
 
-# 7. Struttura del progetto
+# 8. Struttura del progetto
 
 Una possibile struttura del repository è la seguente:
 
 ```text
 video-doc-rag/
-├── app/
-│   ├── __init__.py
-│   ├── cli.py
-│   ├── config.py
-│   ├── logging.py
-│   ├── pipeline/
-│   │   ├── __init__.py
-│   │   ├── ingest_video.py
-│   │   ├── extract_audio.py
-│   │   ├── transcribe.py
-│   │   ├── extract_frames.py
-│   │   ├── ocr_frames.py
-│   │   ├── detect_code.py
-│   │   ├── chunking.py
-│   │   ├── embeddings.py
-│   │   ├── index.py
-│   │   ├── retrieve.py
-│   │   ├── generate_outline.py
-│   │   ├── generate_docs.py
-│   │   └── review_docs.py
-│   ├── models/
-│   │   ├── video_asset.py
-│   │   ├── transcript_segment.py
-│   │   ├── frame_observation.py
-│   │   ├── code_block.py
-│   │   ├── knowledge_chunk.py
-│   │   └── doc_section.py
-│   ├── prompts/
-│   │   ├── outline.md
-│   │   ├── section_generation.md
-│   │   ├── code_explanation.md
-│   │   ├── review.md
-│   │   └── rag_answer.md
-│   ├── storage/
-│   │   ├── sqlite.py
-│   │   ├── qdrant.py
-│   │   └── filesystem.py
-│   └── utils/
-│       ├── timecode.py
-│       ├── hashing.py
-│       ├── markdown.py
-│       └── video.py
+├── src/
+│   └── videodoc/
+│       ├── __init__.py
+│       ├── core/
+│       │   ├── __init__.py
+│       │   ├── config.py
+│       │   ├── logging.py
+│       │   ├── pipeline/
+│       │   │   ├── __init__.py
+│       │   │   ├── ingest_video.py
+│       │   │   ├── extract_audio.py
+│       │   │   ├── transcribe.py
+│       │   │   ├── extract_frames.py
+│       │   │   ├── ocr_frames.py
+│       │   │   ├── detect_code.py
+│       │   │   ├── chunking.py
+│       │   │   ├── embeddings.py
+│       │   │   ├── index.py
+│       │   │   ├── retrieve.py
+│       │   │   ├── generate_outline.py
+│       │   │   ├── generate_docs.py
+│       │   │   └── review_docs.py
+│       │   ├── models/
+│       │   │   ├── video_asset.py
+│       │   │   ├── transcript_segment.py
+│       │   │   ├── frame_observation.py
+│       │   │   ├── code_block.py
+│       │   │   ├── knowledge_chunk.py
+│       │   │   └── doc_section.py
+│       │   ├── prompts/
+│       │   │   ├── outline.md
+│       │   │   ├── section_generation.md
+│       │   │   ├── code_explanation.md
+│       │   │   ├── review.md
+│       │   │   └── rag_answer.md
+│       │   ├── storage/
+│       │   │   ├── sqlite.py
+│       │   │   ├── qdrant.py
+│       │   │   └── filesystem.py
+│       │   └── utils/
+│       │       ├── timecode.py
+│       │       ├── hashing.py
+│       │       ├── markdown.py
+│       │       └── video.py
+│       ├── cli/
+│       │   ├── __init__.py
+│       │   ├── app.py
+│       │   ├── commands/
+│       │   │   ├── init.py
+│       │   │   ├── ingest.py
+│       │   │   ├── transcribe.py
+│       │   │   ├── frames.py
+│       │   │   ├── ocr.py
+│       │   │   ├── code.py
+│       │   │   ├── chunk.py
+│       │   │   ├── index.py
+│       │   │   ├── generate.py
+│       │   │   ├── review.py
+│       │   │   ├── export.py
+│       │   │   ├── ask.py
+│       │   │   ├── status.py
+│       │   │   └── inspect.py
+│       │   └── output.py
+│       └── gui/
+│           ├── __init__.py
+│           ├── api/
+│           │   ├── main.py
+│           │   ├── routes_projects.py
+│           │   ├── routes_pipeline.py
+│           │   ├── routes_docs.py
+│           │   └── routes_chat.py
+│           ├── services/
+│           │   └── jobs.py
+│           └── web/
+│               ├── package.json
+│               ├── src/
+│               └── README.md
 ├── data/
 │   ├── audio/
 │   ├── frames/
@@ -397,21 +534,37 @@ video-doc-rag/
 │       ├── sources.yaml
 │       ├── videos/
 │       ├── materials/
+│       ├── workdir/
 │       └── docs/
 ├── tests/
+│   ├── core/
+│   ├── cli/
+│   └── gui/
 ├── docker-compose.yml
 ├── pyproject.toml
 ├── README.md
 └── .env.example
 ```
 
+## 8.1 Regola sulle dipendenze interne
+
+Le dipendenze devono seguire questa direzione:
+
+```text
+cli  ─┐
+      ├──> core
+gui  ─┘
+```
+
+Il modulo `core` deve rimanere puro e riusabile.
+
 ---
 
-# 8. Formato dei dati e metadati
+# 9. Formato dei dati e metadati
 
 Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame, blocco di codice e sezione documentale.
 
-## 8.1 Video asset
+## 9.1 Video asset
 
 ```json
 {
@@ -429,7 +582,7 @@ Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame
 }
 ```
 
-## 8.2 Transcript segment
+## 9.2 Transcript segment
 
 ```json
 {
@@ -442,7 +595,7 @@ Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame
 }
 ```
 
-## 8.3 Frame observation
+## 9.3 Frame observation
 
 ```json
 {
@@ -458,7 +611,7 @@ Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame
 }
 ```
 
-## 8.4 Code block
+## 9.4 Code block
 
 ```json
 {
@@ -473,7 +626,7 @@ Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame
 }
 ```
 
-## 8.5 Knowledge chunk
+## 9.5 Knowledge chunk
 
 ```json
 {
@@ -496,11 +649,11 @@ Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame
 
 ---
 
-# 9. Pipeline completa
+# 10. Pipeline completa
 
 La pipeline completa deve essere eseguibile in modo automatico, ma ogni fase deve poter essere rilanciata singolarmente.
 
-Esempio di flusso:
+Esempio di flusso da CLI:
 
 ```bash
 videodoc init corso-software-x
@@ -523,9 +676,205 @@ Deve inoltre essere possibile eseguire tutto con un solo comando:
 videodoc run corso-software-x
 ```
 
+Lo stesso flusso deve essere avviabile anche dalla GUI, che internamente richiama i servizi del modulo `core`.
+
 ---
 
-# 10. Fase 1 — Inizializzazione del progetto
+# 11. Modulo core
+
+Il modulo `core` è il cuore del sistema.
+
+Deve contenere:
+
+- modelli dati;
+- configurazione;
+- servizi di pipeline;
+- servizi RAG;
+- storage locale;
+- gestione file system;
+- generazione e revisione documentazione.
+
+## 11.1 Servizi principali
+
+Esempi di servizi del core:
+
+```text
+ProjectService
+VideoIngestionService
+AudioExtractionService
+TranscriptionService
+FrameExtractionService
+OCRService
+CodeDetectionService
+ChunkingService
+EmbeddingService
+IndexingService
+RetrievalService
+DocumentationService
+ReviewService
+ExportService
+```
+
+## 11.2 API interne del core
+
+Il core dovrebbe esporre funzioni o classi utilizzabili sia da CLI sia da GUI.
+
+Esempio concettuale:
+
+```python
+from videodoc.core.services import ProjectService, PipelineService
+
+project = ProjectService.load("corso-software-x")
+PipelineService(project).run_all()
+```
+
+## 11.3 Cosa non deve fare il core
+
+Il core non deve:
+
+- stampare direttamente output CLI complesso;
+- dipendere da Typer;
+- dipendere da React o Streamlit;
+- contenere logica di routing HTTP;
+- contenere codice specifico dell’interfaccia utente.
+
+---
+
+# 12. Modulo CLI
+
+La CLI è il modo più semplice per usare e automatizzare il sistema.
+
+## 12.1 Comandi consigliati
+
+```bash
+videodoc init <project_name>
+videodoc ingest <project_name>
+videodoc transcribe <project_name>
+videodoc frames <project_name>
+videodoc ocr <project_name>
+videodoc code <project_name>
+videodoc chunk <project_name>
+videodoc index <project_name>
+videodoc outline <project_name>
+videodoc generate <project_name>
+videodoc review <project_name>
+videodoc export <project_name>
+videodoc ask <project_name> "domanda"
+videodoc status <project_name>
+videodoc inspect <project_name> --timestamp 00:21:04
+```
+
+## 12.2 Comando status
+
+Mostra lo stato del progetto:
+
+```text
+Project: corso-software-x
+Videos: 8
+Transcribed: 8/8
+Frames extracted: 8/8
+OCR completed: 7/8
+Chunks generated: 8/8
+Indexed: yes
+Documentation generated: partial
+```
+
+## 12.3 Comando inspect
+
+Permette di ispezionare un timestamp specifico:
+
+```bash
+videodoc inspect corso-software-x --video workshop_01.mp4 --timestamp 00:21:04
+```
+
+Output:
+
+```text
+Video: workshop_01.mp4
+Timestamp: 00:21:04
+Transcript: Ora lanciamo il comando per creare il progetto...
+OCR: npm create vite@latest my-app
+Detected code: npm create vite@latest my-app
+Frame: data/frames/workshop_01/frame_0042.jpg
+```
+
+## 12.4 Regola di implementazione CLI
+
+La CLI deve limitarsi a:
+
+1. leggere argomenti;
+2. caricare configurazione;
+3. chiamare il core;
+4. mostrare risultati.
+
+Esempio concettuale:
+
+```python
+@app.command()
+def transcribe(project_name: str):
+    project = ProjectService.load(project_name)
+    TranscriptionService(project).run()
+```
+
+---
+
+# 13. Modulo GUI
+
+La GUI è opzionale e deve essere costruita sopra il modulo `core`.
+
+## 13.1 Obiettivo della GUI
+
+La GUI serve a rendere il sistema utilizzabile anche senza terminale.
+
+Funzioni utili:
+
+- caricamento video;
+- visualizzazione stato pipeline;
+- player video con timestamp;
+- visualizzazione trascrizione;
+- visualizzazione OCR;
+- revisione blocchi codice;
+- editor Markdown;
+- chat RAG;
+- export documentazione.
+
+## 13.2 Architettura GUI consigliata
+
+```text
+Backend: FastAPI
+Frontend: React / Next.js
+Database: SQLite + Qdrant
+Worker: Celery / RQ / Dramatiq
+```
+
+Per una versione semplice si può usare Streamlit.
+
+## 13.3 API web consigliate
+
+Esempi di endpoint:
+
+```text
+GET    /projects
+POST   /projects
+GET    /projects/{project_id}/status
+POST   /projects/{project_id}/run
+POST   /projects/{project_id}/transcribe
+POST   /projects/{project_id}/ocr
+POST   /projects/{project_id}/generate
+GET    /projects/{project_id}/docs
+POST   /projects/{project_id}/ask
+GET    /projects/{project_id}/videos/{video_id}/inspect
+```
+
+## 13.4 Regola di implementazione GUI
+
+La GUI non deve duplicare la logica della CLI.
+
+Deve chiamare il `core` direttamente o tramite un livello di servizi applicativi.
+
+---
+
+# 14. Fase 1 — Inizializzazione del progetto
 
 La fase di inizializzazione crea una nuova cartella progetto con la configurazione base.
 
@@ -592,7 +941,7 @@ documentation:
 
 ---
 
-# 11. Fase 2 — Ingestion dei video
+# 15. Fase 2 — Ingestion dei video
 
 La fase di ingestion registra i video da processare.
 
@@ -627,7 +976,7 @@ Questa fase deve essere idempotente. Se un video è già stato registrato e l’
 
 ---
 
-# 12. Fase 3 — Estrazione audio
+# 16. Fase 3 — Estrazione audio
 
 L’audio viene estratto dal video per poter essere trascritto.
 
@@ -654,7 +1003,7 @@ L’audio estratto deve essere salvato nella cartella di lavoro del video.
 
 ---
 
-# 13. Fase 4 — Trascrizione audio
+# 17. Fase 4 — Trascrizione audio
 
 La trascrizione serve a convertire il parlato in testo con timestamp.
 
@@ -678,21 +1027,9 @@ Output atteso:
 
 La trascrizione deve essere conservata in formato JSON, non solo TXT, perché i timestamp sono fondamentali.
 
-La trascrizione deve poi essere normalizzata in segmenti coerenti.
-
-Esempio di segmento normalizzato:
-
-```json
-{
-  "start_time": "00:00:12",
-  "end_time": "00:00:28",
-  "text": "In questa lezione vediamo come installare il software..."
-}
-```
-
 ---
 
-# 14. Fase 5 — Estrazione frame e screenshot
+# 18. Fase 5 — Estrazione frame e screenshot
 
 La trascrizione audio non basta per documentare video tecnici. È necessario estrarre frame dal video per recuperare:
 
@@ -705,7 +1042,7 @@ La trascrizione audio non basta per documentare video tecnici. È necessario est
 
 Strategie possibili:
 
-## 14.1 Frame a intervalli regolari
+## 18.1 Frame a intervalli regolari
 
 Esempio: un frame ogni 8 secondi.
 
@@ -717,7 +1054,7 @@ Vantaggio: semplice.
 
 Svantaggio: può generare molti frame inutili.
 
-## 14.2 Scene detection
+## 18.2 Scene detection
 
 Usare PySceneDetect per estrarre frame quando cambia la scena.
 
@@ -725,7 +1062,7 @@ Vantaggio: riduce frame duplicati.
 
 Svantaggio: potrebbe perdere piccoli cambiamenti nel codice.
 
-## 14.3 Estrazione guidata dal testo
+## 18.3 Estrazione guidata dal testo
 
 Estrarre più frame quando nella trascrizione compaiono parole come:
 
@@ -745,7 +1082,7 @@ Questa è spesso la strategia migliore per video tecnici.
 
 ---
 
-# 15. Fase 6 — OCR delle schermate
+# 19. Fase 6 — OCR delle schermate
 
 L’OCR serve a leggere il testo visibile nei frame.
 
@@ -777,22 +1114,9 @@ Output consigliato:
 
 È importante conservare anche la confidenza dell’OCR.
 
-L’OCR può sbagliare caratteri critici, per esempio:
-
-- `l` e `1`;
-- `O` e `0`;
-- virgolette;
-- backtick;
-- parentesi;
-- underscore;
-- trattini;
-- indentazione.
-
-Per questo il codice estratto da OCR deve essere sempre classificato con un livello di affidabilità.
-
 ---
 
-# 16. Fase 7 — Riconoscimento ed estrazione del codice
+# 20. Fase 7 — Riconoscimento ed estrazione del codice
 
 Dopo l’OCR, il sistema deve identificare quali parti del testo sono codice.
 
@@ -806,7 +1130,7 @@ Il codice può apparire in:
 - file di configurazione;
 - console di debug.
 
-## 16.1 Classificazione del contenuto
+## 20.1 Classificazione del contenuto
 
 Ogni blocco OCR può essere classificato come:
 
@@ -820,7 +1144,7 @@ file_path
 ui_label
 ```
 
-## 16.2 Riconoscimento del linguaggio
+## 20.2 Riconoscimento del linguaggio
 
 Il sistema deve provare a identificare il linguaggio:
 
@@ -836,7 +1160,7 @@ Il sistema deve provare a identificare il linguaggio:
 - Dockerfile;
 - altro.
 
-## 16.3 Deduplicazione del codice
+## 20.3 Deduplicazione del codice
 
 Nei video lo stesso comando può restare a schermo per molti secondi. Il sistema deve evitare di salvare dieci volte lo stesso blocco.
 
@@ -847,7 +1171,7 @@ Strategie:
 - similarità testuale;
 - confronto tra frame vicini.
 
-## 16.4 Validazione del codice
+## 20.4 Validazione del codice
 
 Quando possibile, il codice deve essere validato.
 
@@ -860,7 +1184,7 @@ Esempi:
 
 ---
 
-# 17. Fase 8 — Chunking intelligente
+# 21. Fase 8 — Chunking intelligente
 
 Il chunking è una delle parti più importanti del progetto.
 
@@ -868,7 +1192,7 @@ Un chunk non deve essere troppo piccolo, perché perderebbe contesto. Non deve e
 
 Un buon chunk per video tecnici può coprire da 2 a 8 minuti, a seconda della densità del contenuto.
 
-## 17.1 Criteri per creare chunk
+## 21.1 Criteri per creare chunk
 
 Il sistema deve considerare:
 
@@ -881,7 +1205,7 @@ Il sistema deve considerare:
 - titoli di slide;
 - azioni nel software.
 
-## 17.2 Struttura del chunk
+## 21.2 Struttura del chunk
 
 ```json
 {
@@ -903,25 +1227,13 @@ Il sistema deve considerare:
 }
 ```
 
-## 17.3 Chunk separati per codice
+## 21.3 Chunk separati per codice
 
 È utile indicizzare anche i blocchi di codice come documenti separati, collegati al chunk principale.
 
-Questo permette query come:
-
-```text
-Quale comando viene usato per avviare il progetto?
-```
-
-oppure:
-
-```text
-Mostrami tutti i file di configurazione modificati nel corso.
-```
-
 ---
 
-# 18. Fase 9 — Creazione degli embedding
+# 22. Fase 9 — Creazione degli embedding
 
 Gli embedding trasformano i chunk in vettori numerici, così possono essere cercati semanticamente.
 
@@ -944,7 +1256,7 @@ Per contenuti italiani e tecnici, è preferibile usare un modello multilingua di
 
 ---
 
-# 19. Fase 10 — Indicizzazione nel vector database
+# 23. Fase 10 — Indicizzazione nel vector database
 
 Il vector database conserva gli embedding e permette retrieval semantico.
 
@@ -983,7 +1295,7 @@ Payload consigliati:
 
 ---
 
-# 20. Fase 11 — Retrieval e RAG
+# 24. Fase 11 — Retrieval e RAG
 
 Il RAG serve a recuperare le fonti più rilevanti prima di generare una risposta o una sezione documentale.
 
@@ -1015,7 +1327,7 @@ Se una procedura, un comando o una spiegazione non appare nelle fonti recuperate
 
 ---
 
-# 21. Fase 12 — Generazione dell’indice della documentazione
+# 25. Fase 12 — Generazione dell’indice della documentazione
 
 Prima di generare le sezioni, il sistema deve creare un outline generale.
 
@@ -1044,11 +1356,9 @@ Output:
 
 L’outline deve essere salvato e modificabile manualmente.
 
-Questo è importante perché l’utente potrebbe voler riorganizzare la documentazione prima della generazione finale.
-
 ---
 
-# 22. Fase 13 — Generazione delle sezioni Markdown
+# 26. Fase 13 — Generazione delle sezioni Markdown
 
 Ogni sezione deve essere generata separatamente.
 
@@ -1090,7 +1400,7 @@ Ogni sezione deve contenere il nome del video e i timestamp.
 
 ---
 
-# 23. Fase 14 — Revisione, validazione e controllo qualità
+# 27. Fase 14 — Revisione, validazione e controllo qualità
 
 La generazione automatica deve essere controllata.
 
@@ -1105,7 +1415,7 @@ Il sistema deve eseguire una revisione automatica per verificare:
 - affermazioni non supportate;
 - Markdown valido.
 
-## 23.1 Controllo anti-allucinazione
+## 27.1 Controllo anti-allucinazione
 
 Il sistema deve confrontare ogni sezione generata con le fonti usate.
 
@@ -1117,7 +1427,7 @@ Esempio:
 > Revisione richiesta: questa affermazione non è stata trovata chiaramente nelle fonti.
 ```
 
-## 23.2 Controllo codice
+## 27.2 Controllo codice
 
 Il codice deve essere classificato come:
 
@@ -1133,7 +1443,7 @@ Se il codice deriva da OCR incerto, deve essere segnalato.
 
 ---
 
-# 24. Fase 15 — Export della documentazione
+# 28. Fase 15 — Export della documentazione
 
 Il formato principale è Markdown.
 
@@ -1146,7 +1456,7 @@ Formati esportabili:
 - PDF;
 - HTML statico.
 
-## 24.1 Export MkDocs
+## 28.1 Export MkDocs
 
 Struttura:
 
@@ -1174,67 +1484,7 @@ nav:
 
 ---
 
-# 25. CLI del progetto
-
-La CLI è il modo più semplice per usare il sistema.
-
-Comandi consigliati:
-
-```bash
-videodoc init <project_name>
-videodoc ingest <project_name>
-videodoc transcribe <project_name>
-videodoc frames <project_name>
-videodoc ocr <project_name>
-videodoc code <project_name>
-videodoc chunk <project_name>
-videodoc index <project_name>
-videodoc outline <project_name>
-videodoc generate <project_name>
-videodoc review <project_name>
-videodoc export <project_name>
-videodoc ask <project_name> "domanda"
-videodoc status <project_name>
-videodoc inspect <project_name> --timestamp 00:21:04
-```
-
-## 25.1 Comando status
-
-Mostra lo stato del progetto:
-
-```text
-Project: corso-software-x
-Videos: 8
-Transcribed: 8/8
-Frames extracted: 8/8
-OCR completed: 7/8
-Chunks generated: 8/8
-Indexed: yes
-Documentation generated: partial
-```
-
-## 25.2 Comando inspect
-
-Permette di ispezionare un timestamp specifico:
-
-```bash
-videodoc inspect corso-software-x --video workshop_01.mp4 --timestamp 00:21:04
-```
-
-Output:
-
-```text
-Video: workshop_01.mp4
-Timestamp: 00:21:04
-Transcript: Ora lanciamo il comando per creare il progetto...
-OCR: npm create vite@latest my-app
-Detected code: npm create vite@latest my-app
-Frame: data/frames/workshop_01/frame_0042.jpg
-```
-
----
-
-# 26. Configurazione del progetto
+# 29. Configurazione del progetto
 
 Esempio completo di `config.yaml`:
 
@@ -1307,15 +1557,22 @@ documentation:
   include_expected_result: true
   include_common_errors: true
   include_sources_section: true
+
+gui:
+  enabled: false
+  backend: "fastapi"
+  frontend: "react"
+  host: "127.0.0.1"
+  port: 8000
 ```
 
 ---
 
-# 27. Schema database SQLite
+# 30. Schema database SQLite
 
 SQLite serve per salvare metadati strutturati.
 
-## 27.1 Tabella projects
+## 30.1 Tabella projects
 
 ```sql
 CREATE TABLE projects (
@@ -1328,7 +1585,7 @@ CREATE TABLE projects (
 );
 ```
 
-## 27.2 Tabella videos
+## 30.2 Tabella videos
 
 ```sql
 CREATE TABLE videos (
@@ -1344,7 +1601,7 @@ CREATE TABLE videos (
 );
 ```
 
-## 27.3 Tabella transcript_segments
+## 30.3 Tabella transcript_segments
 
 ```sql
 CREATE TABLE transcript_segments (
@@ -1358,7 +1615,7 @@ CREATE TABLE transcript_segments (
 );
 ```
 
-## 27.4 Tabella frames
+## 30.4 Tabella frames
 
 ```sql
 CREATE TABLE frames (
@@ -1374,7 +1631,7 @@ CREATE TABLE frames (
 );
 ```
 
-## 27.5 Tabella code_blocks
+## 30.5 Tabella code_blocks
 
 ```sql
 CREATE TABLE code_blocks (
@@ -1391,7 +1648,7 @@ CREATE TABLE code_blocks (
 );
 ```
 
-## 27.6 Tabella chunks
+## 30.6 Tabella chunks
 
 ```sql
 CREATE TABLE chunks (
@@ -1408,7 +1665,7 @@ CREATE TABLE chunks (
 );
 ```
 
-## 27.7 Tabella doc_sections
+## 30.7 Tabella doc_sections
 
 ```sql
 CREATE TABLE doc_sections (
@@ -1426,7 +1683,7 @@ CREATE TABLE doc_sections (
 
 ---
 
-# 28. Schema Qdrant
+# 31. Schema Qdrant
 
 Ogni chunk deve essere indicizzato in Qdrant con payload ricco.
 
@@ -1461,9 +1718,9 @@ Oppure una sola collection con `source_type` differenziato.
 
 ---
 
-# 29. Prompt principali
+# 32. Prompt principali
 
-## 29.1 Prompt per generare outline
+## 32.1 Prompt per generare outline
 
 ```text
 Sei un technical writer esperto.
@@ -1483,7 +1740,7 @@ Output richiesto:
 Markdown con titolo principale e sezioni numerate.
 ```
 
-## 29.2 Prompt per generare una sezione
+## 32.2 Prompt per generare una sezione
 
 ```text
 Sei un technical writer specializzato in documentazione software.
@@ -1511,7 +1768,7 @@ Output:
 Markdown completo.
 ```
 
-## 29.3 Prompt per spiegare codice
+## 32.3 Prompt per spiegare codice
 
 ```text
 Analizza il seguente blocco di codice.
@@ -1530,7 +1787,7 @@ Contesto video:
 {{context}}
 ```
 
-## 29.4 Prompt per revisione
+## 32.4 Prompt per revisione
 
 ```text
 Verifica la seguente sezione Markdown confrontandola con le fonti.
@@ -1554,7 +1811,7 @@ Fonti:
 
 ---
 
-# 30. Gestione del codice estratto dai video
+# 33. Gestione del codice estratto dai video
 
 Il codice è la parte più delicata del progetto.
 
@@ -1569,7 +1826,7 @@ Il sistema deve distinguere tra codice:
 
 Il quarto caso deve essere evitato o marcato esplicitamente come non verificato.
 
-## 30.1 Strict mode
+## 33.1 Strict mode
 
 In strict mode il sistema include solo codice:
 
@@ -1577,7 +1834,7 @@ In strict mode il sistema include solo codice:
 - letto da OCR con confidenza alta;
 - validato da parser o regole semplici.
 
-## 30.2 Assistive mode
+## 33.2 Assistive mode
 
 In assistive mode il sistema può ricostruire codice incompleto, ma deve marcarlo.
 
@@ -1587,7 +1844,7 @@ Esempio:
 > Nota: il seguente blocco è stato ricostruito combinando OCR e trascrizione. Verificare prima dell’uso.
 ```
 
-## 30.3 Verifica umana
+## 33.3 Verifica umana
 
 Il sistema dovrebbe produrre un report dei blocchi di codice da controllare:
 
@@ -1597,7 +1854,7 @@ code_review_report.md
 
 Con contenuto simile:
 
-```markdown
+````markdown
 # Blocchi di codice da verificare
 
 ## workshop_01.mp4 — 00:21:04
@@ -1609,11 +1866,11 @@ npm create vite@latest my-app
 ```
 
 Motivo revisione: OCR sotto soglia minima.
-```
+````
 
 ---
 
-# 31. Gestione dei materiali allegati
+# 34. Gestione dei materiali allegati
 
 I video non dovrebbero essere l’unica fonte.
 
@@ -1635,9 +1892,9 @@ Se un comando o un file appare sia nel video sia nel repository, il repository d
 
 ---
 
-# 32. Modalità operative
+# 35. Modalità operative
 
-## 32.1 Modalità documentazione
+## 35.1 Modalità documentazione
 
 Genera documentazione completa.
 
@@ -1645,7 +1902,7 @@ Genera documentazione completa.
 videodoc generate corso-software-x
 ```
 
-## 32.2 Modalità domanda-risposta
+## 35.2 Modalità domanda-risposta
 
 Permette di interrogare i video.
 
@@ -1661,7 +1918,7 @@ La configurazione del database viene mostrata nel video `workshop_03_database.mp
 La procedura consiste in...
 ```
 
-## 32.3 Modalità rigenerazione parziale
+## 35.3 Modalità rigenerazione parziale
 
 Rigenera solo una sezione.
 
@@ -1669,7 +1926,7 @@ Rigenera solo una sezione.
 videodoc regenerate corso-software-x --section "Configurazione database"
 ```
 
-## 32.4 Modalità ispezione
+## 35.4 Modalità ispezione
 
 Mostra fonti grezze collegate a un timestamp.
 
@@ -1677,53 +1934,52 @@ Mostra fonti grezze collegate a un timestamp.
 videodoc inspect corso-software-x --video workshop_03.mp4 --timestamp 00:14:20
 ```
 
----
+## 35.5 Modalità GUI
 
-# 33. Interfaccia web opzionale
+Avvia l’interfaccia web.
 
-Una UI web può essere aggiunta dopo l’MVP.
-
-Funzioni utili:
-
-- caricamento video;
-- visualizzazione stato pipeline;
-- player video con timestamp;
-- visualizzazione trascrizione;
-- visualizzazione OCR;
-- revisione blocchi codice;
-- editor Markdown;
-- chat RAG;
-- export documentazione.
-
-Stack possibile:
-
-```text
-Backend: FastAPI
-Frontend: React / Next.js
-Database: SQLite + Qdrant
-Worker: Celery / RQ / Dramatiq
+```bash
+videodoc gui corso-software-x
 ```
 
-Per una versione semplice si può usare Streamlit.
+Oppure, in modalità sviluppo:
+
+```bash
+videodoc gui dev corso-software-x
+```
 
 ---
 
-# 34. Roadmap di sviluppo
+# 36. Roadmap di sviluppo
 
-## 34.1 MVP 1 — Pipeline base
+## 36.1 MVP 1 — Core pipeline base
 
 Obiettivo: trasformare un video in Markdown usando trascrizione audio.
 
 Funzioni:
 
-- CLI base;
+- struttura `core`;
+- modelli dati;
+- configurazione progetto;
 - ingestion video;
 - estrazione audio;
 - trascrizione;
 - chunking temporale;
 - generazione Markdown semplice.
 
-## 34.2 MVP 2 — OCR e codice
+## 36.2 MVP 2 — CLI completa
+
+Obiettivo: usare il sistema da terminale.
+
+Funzioni:
+
+- modulo `cli`;
+- comandi Typer;
+- `init`, `ingest`, `transcribe`, `chunk`, `generate`;
+- comando `status`;
+- comando `inspect`.
+
+## 36.3 MVP 3 — OCR e codice
 
 Obiettivo: recuperare codice e informazioni visive.
 
@@ -1735,7 +1991,7 @@ Funzioni:
 - riconoscimento blocchi codice;
 - codice incluso nella documentazione.
 
-## 34.3 MVP 3 — RAG completo
+## 36.4 MVP 4 — RAG completo
 
 Obiettivo: interrogare i contenuti.
 
@@ -1747,7 +2003,7 @@ Funzioni:
 - chat RAG;
 - generazione sezioni tramite retrieval.
 
-## 34.4 MVP 4 — Multi-video e documentazione completa
+## 36.5 MVP 5 — Multi-video ed export
 
 Obiettivo: generare una documentazione completa da più workshop.
 
@@ -1758,7 +2014,7 @@ Funzioni:
 - riferimenti multi-video;
 - export MkDocs.
 
-## 34.5 MVP 5 — Revisione e UI
+## 36.6 MVP 6 — GUI
 
 Obiettivo: rendere il sistema usabile da utenti non tecnici.
 
@@ -1768,13 +2024,15 @@ Funzioni:
 - editor Markdown;
 - revisione codice;
 - approvazione sezioni;
-- rigenerazione parziale.
+- chat RAG;
+- rigenerazione parziale;
+- export da interfaccia.
 
 ---
 
-# 35. Best practice
+# 37. Best practice
 
-## 35.1 Salvare sempre i dati intermedi
+## 37.1 Salvare sempre i dati intermedi
 
 Non bisogna cancellare trascrizioni, OCR, frame o chunk dopo la generazione.
 
@@ -1786,57 +2044,67 @@ Questi dati permettono di:
 - migliorare prompt;
 - fare audit delle fonti.
 
-## 35.2 Non fidarsi ciecamente dell’OCR
+## 37.2 Non fidarsi ciecamente dell’OCR
 
 L’OCR può sbagliare caratteri importanti. Il codice va sempre marcato con una confidenza.
 
-## 35.3 Usare materiali originali quando disponibili
+## 37.3 Usare materiali originali quando disponibili
 
 Repository, slide e file sorgenti sono spesso più precisi del video.
 
-## 35.4 Generare una sezione alla volta
+## 37.4 Generare una sezione alla volta
 
 Questo riduce errori e migliora qualità.
 
-## 35.5 Mantenere timestamp ovunque
+## 37.5 Mantenere timestamp ovunque
 
 I timestamp rendono la documentazione verificabile.
 
-## 35.6 Separare generazione e revisione
+## 37.6 Separare generazione e revisione
 
 La pipeline deve generare, poi revisionare. Non bisogna considerare la prima generazione come definitiva.
 
+## 37.7 Tenere separati core, CLI e GUI
+
+La logica deve vivere nel `core`.
+
+La CLI e la GUI devono essere solo interfacce verso il motore applicativo.
+
 ---
 
-# 36. Limiti del sistema
+# 38. Limiti del sistema
 
 Il sistema può essere molto utile, ma ha limiti importanti.
 
-## 36.1 Codice non sempre leggibile
+## 38.1 Codice non sempre leggibile
 
 Se il video è compresso, sfocato o il font è piccolo, l’OCR può fallire.
 
-## 36.2 Audio ambiguo
+## 38.2 Audio ambiguo
 
 La trascrizione può contenere errori, soprattutto con termini tecnici, nomi di librerie o accenti.
 
-## 36.3 Azioni grafiche difficili da descrivere
+## 38.3 Azioni grafiche difficili da descrivere
 
 Alcune azioni svolte nell’interfaccia possono non essere comprese correttamente senza un modello multimodale.
 
-## 36.4 Rischio allucinazioni
+## 38.4 Rischio allucinazioni
 
 Il LLM può inventare dettagli se il prompt non è rigido o se le fonti sono incomplete.
 
-## 36.5 Necessità di revisione umana
+## 38.5 Necessità di revisione umana
 
 Per documentazione professionale, soprattutto con codice, è necessaria una fase di revisione.
 
+## 38.6 Complessità della GUI
+
+La GUI aumenta la complessità del progetto. Per questo dovrebbe arrivare dopo un `core` stabile e una CLI funzionante.
+
 ---
 
-# 37. Esempio di output Markdown generato
+# 39. Esempio di output Markdown generato
 
-```markdown
+````markdown
 # Installazione dell’ambiente
 
 **Video di riferimento:** `workshop_01_installazione.mp4`  
@@ -1877,13 +2145,13 @@ Al termine della procedura, il terminale deve trovarsi nella cartella del proget
 
 - Video: `workshop_01_installazione.mp4`
 - Timestamp: `00:04:12–00:16:40`
-```
+````
 
 ---
 
-# 38. Conclusione
+# 40. Conclusione
 
-Il progetto VideoDocRAG permette di trasformare video tecnici lunghi e difficili da consultare in documentazione Markdown strutturata, navigabile, interrogabile e versionabile.
+VideoDocRAG permette di trasformare video tecnici lunghi e difficili da consultare in documentazione Markdown strutturata, navigabile, interrogabile e versionabile.
 
 La parte più importante non è soltanto usare un LLM locale, ma costruire una pipeline robusta che gestisca correttamente:
 
@@ -1897,7 +2165,13 @@ La parte più importante non è soltanto usare un LLM locale, ma costruire una p
 - revisione;
 - tracciabilità delle fonti.
 
-Il sistema deve essere pensato come uno strumento riusabile, non come una soluzione specifica per un solo corso.
+La nuova separazione in `core`, `cli` e `gui` rende il progetto più pulito e manutenibile:
+
+```text
+core = logica applicativa e pipeline
+cli  = interfaccia da terminale
+gui  = interfaccia web opzionale
+```
 
 La forma più efficace è una pipeline modulare:
 
