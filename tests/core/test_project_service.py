@@ -48,7 +48,40 @@ def test_init_creates_expected_structure(tmp_path):
     assert (result.project_dir / "sources.yaml").is_file()
     assert result.config_path.is_file()
     assert not (result.project_dir / "project.db").exists()
-    assert registry.resolve("Demo Course") == result.project_dir
+    # The registry key is always the slug, never the raw display name.
+    assert result.name == "demo-course"
+    assert registry.resolve("demo-course") == result.project_dir
+    assert registry.resolve("Demo Course") is None
+
+
+def test_init_registers_by_slug_not_display_name(tmp_path):
+    """Regression test: 'init' and 'link' must agree on the canonical
+    registry key (the slug), otherwise the same project ends up reachable
+    under different identifiers depending on how it was created."""
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    result = ProjectService.init("Corso Software X", path=tmp_path / "corso", registry=registry)
+    assert result.name == "corso-software-x"
+
+    other_registry = ProjectRegistry(tmp_path / "other-registry.json")
+    linked = ProjectService.link(result.project_dir, registry=other_registry)
+    assert linked.name == result.name == "corso-software-x"
+
+
+def test_init_on_path_with_different_existing_project_raises(tmp_path):
+    """Regression test: re-running 'init' with a different name on a path
+    that already holds someone else's project must fail loudly instead of
+    silently aliasing that project under the new name."""
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    shared_dir = tmp_path / "shared"
+    ProjectService.init("Original Project", path=shared_dir, registry=registry)
+
+    with pytest.raises(RegistryConflictError):
+        ProjectService.init("Different Project", path=shared_dir, registry=registry)
+
+    # The original project's config.yaml must be untouched, and no alias
+    # for 'different-project' should have been registered.
+    assert registry.resolve("different-project") is None
+    assert registry.resolve("original-project") == shared_dir.resolve()
 
 
 def test_init_with_explicit_path_uses_it_directly(tmp_path):

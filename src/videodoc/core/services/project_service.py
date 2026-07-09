@@ -59,10 +59,16 @@ class ProjectService:
         registry = registry or ProjectRegistry()
 
         # 1. Check for conflicts BEFORE touching the filesystem (fail-fast).
-        existing = registry.resolve(name)
+        # The registry key is always the slug, never the raw display name:
+        # 'link' already registers by config.project.slug when --name is
+        # omitted, so 'init' must be consistent with it. Registering by the
+        # untouched human name would mean 'videodoc init "Corso Software X"'
+        # and 'videodoc link <same folder>' silently disagree on the
+        # project's canonical identifier.
+        existing = registry.resolve(slug)
         if existing is not None and existing.resolve() != target_dir:
             raise RegistryConflictError(
-                f"Project '{name}' is already registered at {existing}, "
+                f"Project '{slug}' is already registered at {existing}, "
                 f"which differs from the requested path {target_dir}."
             )
 
@@ -74,6 +80,18 @@ class ProjectService:
         config_path = target_dir / "config.yaml"
         if config_path.exists():
             config = ProjectConfig.load(config_path)  # raises InvalidConfigError if corrupted
+            if config.project.slug != slug:
+                # target_dir already holds a DIFFERENT project. Silently keeping
+                # its config while registering it under the newly-requested slug
+                # would create a confusing, unintended alias (registry key !=
+                # the project's own on-disk identity). Refuse instead.
+                raise RegistryConflictError(
+                    f"{target_dir} already contains a different project "
+                    f"('{config.project.slug}', named '{config.project.name}'). "
+                    f"Refusing to re-initialize it as '{slug}' since that would "
+                    f"create a misleading alias. Use 'videodoc link {target_dir}' "
+                    f"to register it under its own identity, or choose an empty path."
+                )
             created = False
         else:
             config = ProjectConfig.default(name=name, slug=slug, language=language)
@@ -81,8 +99,8 @@ class ProjectService:
             created = True
 
         # 4. Registration (idempotent by construction of ProjectRegistry.register).
-        registry.register(name, target_dir)
-        return ProjectInitResult(name=name, project_dir=target_dir, config_path=config_path, created=created)
+        registry.register(slug, target_dir)
+        return ProjectInitResult(name=slug, project_dir=target_dir, config_path=config_path, created=created)
 
     @classmethod
     def load(cls, reference: str, *, registry: ProjectRegistry | None = None) -> "ProjectService":

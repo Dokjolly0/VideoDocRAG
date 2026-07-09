@@ -9,6 +9,8 @@
 - Idempotent folder creation (`ensure_project_structure`, `ensure_sources_yaml`): re-running `init` never overwrites an existing `config.yaml` or `sources.yaml`.
 - `--path` option to create a project anywhere on the filesystem (README §4.7 / §8.1.2): when omitted, the project is created under a default home outside the program folder (`VIDEODOC_HOME` env var, falling back to `~/VideoDocRAG/projects/<slug>`).
 - `project.db` is deliberately **not** created at this stage — no SQLite schema exists yet to justify it (README §37.8: heavy state is introduced only when a step actually needs it). It will be created during the ingestion step.
+- The registry key used by `init` is always `slugify(name)`, never the raw display name — see `docs/features/slugify.md` for the full rationale.
+- `init` refuses to re-initialize a path that already holds a *different* project (a `config.yaml` whose `project.slug` doesn't match the newly requested one), raising `RegistryConflictError` instead of silently aliasing it — see `docs/features/slugify.md`.
 
 ## Main files
 - `src/videodoc/core/config.py` — Pydantic schema and YAML load/save.
@@ -20,6 +22,7 @@
 - The canonical `config.yaml` schema is the full one from README §30, not the simplified example in §14 (confirmed with the project owner) — the §14 example is illustrative only.
 - `slugify()` stays a dependency-free utility raising a plain `ValueError`; `ProjectService` translates that into the domain exception `InvalidProjectNameError` at its single call site, so the CLI only ever needs to catch domain exceptions from `core.errors`.
 - `sources.yaml` is created as an empty placeholder (`# Populated by 'videodoc scan'`), not a pre-defined schema — that schema belongs to the (not yet implemented) `scan` step.
+- Canonical project identifier: the slug, always — see `docs/features/slugify.md` for the full rule and the two regressions it closes (registry key mismatch between `init`/`link`; unintended aliasing when re-initializing a path that already holds a different project).
 
 ## CLI
 

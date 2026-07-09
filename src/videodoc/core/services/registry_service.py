@@ -72,19 +72,46 @@ class ProjectRegistry:
         tmp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         tmp_path.replace(self._registry_path)  # atomic write
 
+    def _extract_path(self, name: str, raw: dict) -> Path | None:
+        """Best-effort 'path' extraction for a single entry. Returns None
+        (and logs) instead of raising, so one malformed entry never crashes
+        commands that iterate the whole registry (list/resolve)."""
+        path_raw = raw.get("path") if isinstance(raw, dict) else None
+        if not isinstance(path_raw, str) or not path_raw:
+            logger.warning("Registry entry '%s' has a missing or invalid 'path'; ignoring it.", name)
+            return None
+        return Path(path_raw)
+
+    def _extract_created_at(self, name: str, raw: dict) -> datetime:
+        """Best-effort 'created_at' extraction; falls back to now() instead
+        of raising, since a bad timestamp shouldn't block using the entry."""
+        created_raw = raw.get("created_at") if isinstance(raw, dict) else None
+        try:
+            return datetime.fromisoformat(created_raw)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Registry entry '%s' has a missing or invalid 'created_at'; using the current time instead.",
+                name,
+            )
+            return datetime.now(timezone.utc)
+
     def register(self, name: str, path: Path) -> ProjectEntry:
         resolved = path.resolve()
         data = self._load()
-        existing = data["projects"].get(name)
-        if existing is not None:
-            existing_path = Path(existing["path"]).resolve()
-            if existing_path == resolved:
-                return ProjectEntry(name, existing_path, datetime.fromisoformat(existing["created_at"]))
-            raise RegistryConflictError(
-                f"Project '{name}' is already registered at {existing_path}, "
-                f"which differs from the requested path {resolved}. "
-                f"Use a different name, or 'videodoc unlink {name}' first."
-            )
+        existing_raw = data["projects"].get(name)
+        if existing_raw is not None:
+            existing_path = self._extract_path(name, existing_raw)
+            if existing_path is not None:
+                existing_path = existing_path.resolve()
+                if existing_path == resolved:
+                    return ProjectEntry(name, existing_path, self._extract_created_at(name, existing_raw))
+                raise RegistryConflictError(
+                    f"Project '{name}' is already registered at {existing_path}, "
+                    f"which differs from the requested path {resolved}. "
+                    f"Use a different name, or 'videodoc unlink {name}' first."
+                )
+            # existing_raw is malformed (unusable 'path'): treat it as absent
+            # and let this call heal the entry with a fresh, valid one.
         created_at = datetime.now(timezone.utc)
         data["projects"][name] = {"path": resolved.as_posix(), "created_at": created_at.isoformat()}
         self._save(data)
@@ -92,22 +119,28 @@ class ProjectRegistry:
 
     def unlink(self, name: str) -> ProjectEntry:
         data = self._load()
-        entry = data["projects"].pop(name, None)
-        if entry is None:
+        raw = data["projects"].pop(name, None)
+        if raw is None:
             raise ProjectNotFoundError(f"No project named '{name}' is registered.")
         self._save(data)
-        return ProjectEntry(name, Path(entry["path"]), datetime.fromisoformat(entry["created_at"]))
+        # Removal above always succeeds regardless of whether raw is
+        # well-formed (popping a dict key needs no parsing) -- unlink must
+        # never be the thing that fails to clean up a malformed entry.
+        path = self._extract_path(name, raw) or Path(str(raw.get("path")) if isinstance(raw, dict) else "<unknown>")
+        return ProjectEntry(name, path, self._extract_created_at(name, raw))
 
     def resolve(self, name: str) -> Path | None:
-        entry = self._load()["projects"].get(name)
-        return Path(entry["path"]) if entry else None
+        raw = self._load()["projects"].get(name)
+        if raw is None:
+            return None
+        return self._extract_path(name, raw)
 
     def list_all(self) -> list[ProjectEntry]:
         data = self._load()["projects"]
-        return sorted(
-            (
-                ProjectEntry(n, Path(v["path"]), datetime.fromisoformat(v["created_at"]))
-                for n, v in data.items()
-            ),
-            key=lambda e: e.name,
-        )
+        entries = []
+        for n, raw in data.items():
+            path = self._extract_path(n, raw)
+            if path is None:
+                continue
+            entries.append(ProjectEntry(n, path, self._extract_created_at(n, raw)))
+        return sorted(entries, key=lambda e: e.name)

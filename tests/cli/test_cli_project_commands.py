@@ -22,6 +22,27 @@ def test_init_with_custom_path(tmp_path):
     assert (custom / "config.yaml").is_file()
 
 
+def test_init_registers_by_slug_not_raw_display_name(tmp_path):
+    custom = tmp_path / "corso"
+    result = runner.invoke(app, ["init", "Corso Software X", "--path", str(custom)])
+    assert result.exit_code == 0
+    assert "corso-software-x" in result.stdout
+
+    list_result = runner.invoke(app, ["list"])
+    assert "corso-software-x" in list_result.stdout
+
+    path_result = runner.invoke(app, ["path", "corso-software-x"])
+    assert path_result.exit_code == 0
+
+
+def test_init_on_path_with_different_existing_project_fails(tmp_path):
+    shared = tmp_path / "shared"
+    runner.invoke(app, ["init", "Original Project", "--path", str(shared)])
+
+    result = runner.invoke(app, ["init", "Different Project", "--path", str(shared)])
+    assert result.exit_code == 1
+
+
 def test_init_rerun_reports_already_initialized(tmp_path):
     custom = tmp_path / "custom-project"
     runner.invoke(app, ["init", "demo", "--path", str(custom)])

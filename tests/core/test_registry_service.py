@@ -98,3 +98,53 @@ def test_registered_paths_are_absolute(tmp_path, monkeypatch):
     registry.register("demo", Path("relative-dir"))
     resolved = registry.resolve("demo")
     assert resolved.is_absolute()
+
+
+def _write_raw_registry(registry_path: Path, projects: dict) -> None:
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({"version": 1, "projects": projects}), encoding="utf-8")
+
+
+def test_list_all_skips_malformed_entry_but_keeps_valid_ones(tmp_path, caplog):
+    registry_path = tmp_path / "registry.json"
+    _write_raw_registry(
+        registry_path,
+        {
+            "good": {"path": str(tmp_path / "good"), "created_at": "2026-01-01T00:00:00+00:00"},
+            "no-path": {"created_at": "2026-01-01T00:00:00+00:00"},
+        },
+    )
+    with caplog.at_level(logging.WARNING):
+        entries = ProjectRegistry(registry_path).list_all()
+    assert [e.name for e in entries] == ["good"]
+    assert "no-path" in caplog.text
+
+
+def test_resolve_returns_none_for_entry_with_missing_path(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    _write_raw_registry(registry_path, {"broken": {"created_at": "2026-01-01T00:00:00+00:00"}})
+    assert ProjectRegistry(registry_path).resolve("broken") is None
+
+
+def test_unlink_removes_malformed_entry_without_crashing(tmp_path):
+    """A malformed entry must always be removable -- 'unlink' is the tool
+    meant to clean it up, so it must never itself be blocked by bad data."""
+    registry_path = tmp_path / "registry.json"
+    _write_raw_registry(registry_path, {"broken": {"created_at": "not-a-real-timestamp"}})
+    registry = ProjectRegistry(registry_path)
+
+    entry = registry.unlink("broken")
+    assert entry.name == "broken"
+    assert registry.list_all() == []
+    assert registry.resolve("broken") is None
+
+
+def test_register_heals_a_malformed_existing_entry(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    _write_raw_registry(registry_path, {"demo": {"created_at": "2026-01-01T00:00:00+00:00"}})
+    registry = ProjectRegistry(registry_path)
+
+    target = tmp_path / "demo"
+    entry = registry.register("demo", target)
+    assert entry.path == target.resolve()
+    assert registry.resolve("demo") == target.resolve()
