@@ -10,6 +10,8 @@
 6. [Organizzazione modulare: core, CLI e GUI](#6-organizzazione-modulare-core-cli-e-gui)
 7. [Stack tecnologico consigliato](#7-stack-tecnologico-consigliato)
 8. [Struttura del progetto](#8-struttura-del-progetto)
+   - [8.1.1 Isolamento dati per progetto](#811-isolamento-dati-per-progetto)
+   - [8.1.2 Percorso dei progetti e registro locale](#812-percorso-dei-progetti-e-registro-locale)
    - [8.2 Modello progetto per ogni RAG](#82-modello-progetto-per-ogni-rag)
    - [8.3 Scansione delle fonti ed esclusioni](#83-scansione-delle-fonti-ed-esclusioni)
 9. [Formato dei dati e metadati](#9-formato-dei-dati-e-metadati)
@@ -262,6 +264,19 @@ Il progetto deve distinguere chiaramente:
 - documentazione finale generata.
 
 Questa separazione permette di rigenerare la documentazione senza dover rielaborare i video da zero.
+
+## 4.7 Separazione tra programma e dati utente
+
+La cartella in cui è installato o eseguito il programma non deve contenere i dati dell'utente. I progetti (video, materiali, indici, documentazione generata) devono poter vivere in una cartella qualunque scelta dall'utente, anche completamente separata dal codice del programma.
+
+Questo è particolarmente importante in vista di una futura distribuzione come eseguibile: un utente che installa l'app non deve trovarsi con i propri progetti dentro la cartella di installazione (spesso protetta in scrittura, es. `Program Files`), né deve rischiare di perdere i dati disinstallando o aggiornando il programma.
+
+Per questo motivo:
+
+- `videodoc init` accetta un percorso esplicito (`--path`) in cui creare il progetto, ovunque sul filesystem;
+- se non viene specificato un percorso, il progetto viene creato in una cartella dati di default, esterna alla cartella del programma;
+- il sistema mantiene un piccolo registro locale (fuori dal programma e fuori dai singoli progetti) che associa il nome di ogni progetto al suo percorso reale, così i comandi CLI/GUI possono continuare a riferirsi ai progetti per nome;
+- ogni progetto resta comunque autosufficiente: la sua cartella contiene tutto il necessario (config, dati, indici, documentazione) e può essere aperta anche senza essere registrata, specificando direttamente il percorso.
 
 ---
 
@@ -527,21 +542,17 @@ video-doc-rag/
 │               ├── package.json
 │               ├── src/
 │               └── README.md
-├── data/
-│   ├── audio/
-│   ├── frames/
-│   ├── transcripts/
-│   ├── ocr/
-│   ├── chunks/
-│   ├── indexes/
-│   └── generated_docs/
 ├── projects/
 │   └── esempio-corso/
 │       ├── config.yaml
 │       ├── sources.yaml
-│       ├── videos/
-│       ├── materials/
+│       ├── project.db          # database SQLite dedicato del progetto
+│       ├── videos/              # required
+│       ├── attachments/         # optional
+│       ├── codebase/            # optional
 │       ├── workdir/
+│       ├── indexes/             # storage locale Qdrant del progetto
+│       ├── sessions/
 │       └── docs/
 ├── tests/
 │   ├── core/
@@ -564,6 +575,76 @@ gui  ─┘
 ```
 
 Il modulo `core` deve rimanere puro e riusabile.
+
+## 8.1.1 Isolamento dati per progetto
+
+Ogni progetto è un'unità completamente isolata, sia a livello di file sia a livello di storage strutturato:
+
+- il database SQLite non è condiviso tra progetti: ogni progetto possiede il proprio file `project.db`, salvato nella root del progetto (`projects/<slug>/project.db`);
+- l'indice vettoriale non è condiviso tra progetti: Qdrant viene eseguito in modalità locale/embedded, con lo storage puntato dentro `projects/<slug>/indexes/`, invece che su un'istanza server condivisa tra più progetti;
+- di conseguenza un progetto è autocontenuto nella propria cartella: può essere copiato, spostato, archiviato o cancellato senza toccare gli altri progetti e senza bisogno di migrazioni o pulizia di righe/collection condivise.
+
+Questa scelta ha un costo: non è possibile fare query o ricerche cross-progetto direttamente sullo storage. Non essendo un requisito del sistema, il costo è accettabile a fronte dei benefici di isolamento, portabilità e semplicità (nessun lock condiviso, nessun rischio di collisione di ID tra progetti diversi).
+
+## 8.1.2 Percorso dei progetti e registro locale
+
+Il programma (codice sorgente, o eseguibile una volta distribuito) e i dati dell'utente (progetti) sono due cose separate e possono vivere in due posizioni completamente diverse sul filesystem. La cartella `projects/` mostrata nell'albero del repository qui sopra rappresenta solo la posizione di default usata durante lo sviluppo, quando il programma viene eseguito direttamente da questo repository.
+
+Percorso di default (fuori dalla cartella del programma):
+
+```text
+Windows:      %USERPROFILE%\VideoDocRAG\projects\
+Linux/macOS:  ~/VideoDocRAG/projects/
+```
+
+Il percorso di default è configurabile globalmente, per esempio tramite una variabile d'ambiente (`VIDEODOC_HOME`) o un file di impostazioni globali dell'applicazione, ed è comunque sempre esterno alla cartella in cui è installato il programma.
+
+Percorso personalizzato per singolo progetto:
+
+```bash
+videodoc init corso-software-x --path "D:/Corsi/corso-software-x"
+```
+
+Se `--path` non viene specificato, il progetto viene creato nella cartella di default, con il nome/slug del progetto come sottocartella.
+
+### Registro locale
+
+Poiché i progetti possono trovarsi in posizioni arbitrarie, il sistema mantiene un piccolo registro locale che associa il nome di ogni progetto al suo percorso reale. Il registro non fa parte né del programma né di un singolo progetto: vive in una cartella dati dell'applicazione, per esempio `%LOCALAPPDATA%\VideoDocRAG\registry.json` su Windows o `~/.local/share/videodoc/registry.json` su Linux/macOS.
+
+Esempio di contenuto:
+
+```json
+{
+  "version": 1,
+  "projects": {
+    "corso-software-x": {
+      "path": "D:/Corsi/corso-software-x",
+      "created_at": "2026-07-09T10:00:00"
+    }
+  }
+}
+```
+
+Il registro è solo una comodità per continuare a riferirsi ai progetti per nome nei comandi CLI (`videodoc transcribe corso-software-x`). Non è indispensabile: un progetto resta apribile anche senza essere registrato, passando direttamente il suo percorso.
+
+### Risoluzione di un progetto nei comandi
+
+Quando un comando riceve un riferimento a un progetto, il sistema lo risolve in quest'ordine:
+
+1. se il valore è un percorso esistente contenente un `config.yaml` valido, viene usato direttamente come progetto, anche se non registrato;
+2. altrimenti, il valore viene cercato come nome nel registro locale;
+3. se non viene trovato in nessuno dei due modi, il comando termina con un errore che suggerisce `videodoc list` o la specifica di un percorso valido.
+
+### Comandi CLI dedicati
+
+```bash
+videodoc list                       # elenca tutti i progetti registrati con il relativo percorso
+videodoc link <path>                # registra un progetto esistente creato o spostato manualmente
+videodoc unlink <project_name>      # rimuove un progetto dal registro, senza cancellarne i file
+videodoc path <project_name>        # stampa il percorso assoluto di un progetto registrato
+```
+
+`unlink` non cancella mai i file del progetto: agisce solo sul registro locale.
 
 ## 8.2 Modello progetto per ogni RAG
 
@@ -692,11 +773,11 @@ Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame
   "duration_seconds": 7420,
   "language": "it",
   "hash": "abc123",
-  "audio_path": "data/audio/workshop_01.wav",
-  "transcript_path": "data/transcripts/workshop_01.json",
-  "frames_path": "data/frames/workshop_01/",
-  "ocr_path": "data/ocr/workshop_01.json",
-  "chunks_path": "data/chunks/workshop_01.json"
+  "audio_path": "workdir/workshop_01_installazione/audio/workshop_01.wav",
+  "transcript_path": "workdir/workshop_01_installazione/transcript/workshop_01.json",
+  "frames_path": "workdir/workshop_01_installazione/frames/",
+  "ocr_path": "workdir/workshop_01_installazione/ocr/workshop_01.json",
+  "chunks_path": "workdir/workshop_01_installazione/chunks/workshop_01.json"
 }
 ```
 
@@ -720,7 +801,7 @@ Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame
   "frame_id": "frame_0042",
   "video_id": "workshop_01",
   "timestamp": "00:21:04",
-  "image_path": "data/frames/workshop_01/frame_0042.jpg",
+  "image_path": "workdir/workshop_01_installazione/frames/frame_0042.jpg",
   "ocr_text": "npm create vite@latest my-app",
   "contains_code": true,
   "contains_terminal": true,
@@ -916,7 +997,11 @@ La CLI è il modo più semplice per usare e automatizzare il sistema.
 ## 12.1 Comandi consigliati
 
 ```bash
-videodoc init <project_name>
+videodoc init <project_name> [--path <percorso>]
+videodoc list
+videodoc link <percorso>
+videodoc unlink <project_name>
+videodoc path <project_name>
 videodoc scan <project_name>
 videodoc ingest <project_name>
 videodoc sync-codebase <project_name>
@@ -967,7 +1052,7 @@ Timestamp: 00:21:04
 Transcript: Ora lanciamo il comando per creare il progetto...
 OCR: npm create vite@latest my-app
 Detected code: npm create vite@latest my-app
-Frame: data/frames/workshop_01/frame_0042.jpg
+Frame: workdir/workshop_01_installazione/frames/frame_0042.jpg
 ```
 
 ## 12.4 Regola di implementazione CLI
@@ -1050,25 +1135,35 @@ Deve chiamare il `core` direttamente o tramite un livello di servizi applicativi
 
 # 14. Fase 1 — Inizializzazione del progetto
 
-La fase di inizializzazione crea una nuova cartella progetto con la configurazione base.
+La fase di inizializzazione crea una nuova cartella progetto con la configurazione base, in una posizione scelta dall'utente (vedi [8.1.2 Percorso dei progetti e registro locale](#812-percorso-dei-progetti-e-registro-locale)).
 
-Comando:
+Comando con percorso di default:
 
 ```bash
 videodoc init corso-software-x
 ```
 
+Comando con percorso personalizzato:
+
+```bash
+videodoc init corso-software-x --path "D:/Corsi/corso-software-x"
+```
+
+In entrambi i casi il progetto viene registrato nel registro locale con il nome `corso-software-x`, così da poter essere richiamato per nome nei comandi successivi indipendentemente da dove si trovi fisicamente sul filesystem.
+
 Output atteso:
 
 ```text
-projects/corso-software-x/
+corso-software-x/
 ├── config.yaml
 ├── sources.yaml
+├── project.db
 ├── videos/          # required
 ├── attachments/     # optional
 ├── codebase/        # optional
 ├── workdir/
 ├── indexes/
+├── sessions/
 └── docs/
 ```
 
@@ -1131,7 +1226,7 @@ Attività principali:
 1. leggere i file video nella cartella `videos/`;
 2. calcolare un hash del file;
 3. estrarre durata, formato, risoluzione e codec;
-4. registrare il video nel database SQLite;
+4. registrare il video nel database SQLite dedicato del progetto (`project.db`);
 5. creare una cartella di lavoro dedicata al video.
 
 Esempio di comando:
@@ -2115,12 +2210,10 @@ Tabella sessioni:
 ```sql
 CREATE TABLE chat_sessions (
     id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
     title TEXT,
     default_source TEXT DEFAULT 'docs',
     created_at TEXT,
-    updated_at TEXT,
-    FOREIGN KEY(project_id) REFERENCES projects(id)
+    updated_at TEXT
 );
 ```
 
@@ -2235,6 +2328,7 @@ paths:
   workdir: "workdir"
   indexes: "indexes"
   output: "docs"
+  database: "project.db"
 
 llm:
   provider: "ollama"
@@ -2334,38 +2428,23 @@ gui:
 
 # 31. Schema database SQLite
 
-SQLite serve per salvare metadati strutturati.
+SQLite serve per salvare metadati strutturati. Il database non è condiviso: ogni progetto ha il proprio file `project.db` (vedi [8.1.1 Isolamento dati per progetto](#811-isolamento-dati-per-progetto)), quindi le tabelle non hanno bisogno di una colonna `project_id` né di una tabella `projects` a parte — l'identità del progetto (nome, slug, lingua) resta in `config.yaml`.
 
-## 30.1 Tabella projects
-
-```sql
-CREATE TABLE projects (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL,
-    language TEXT,
-    created_at TEXT,
-    updated_at TEXT
-);
-```
-
-## 30.2 Tabella videos
+## 30.1 Tabella videos
 
 ```sql
 CREATE TABLE videos (
     id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
     filename TEXT NOT NULL,
     title TEXT,
     duration_seconds REAL,
     file_hash TEXT,
     path TEXT,
-    created_at TEXT,
-    FOREIGN KEY(project_id) REFERENCES projects(id)
+    created_at TEXT
 );
 ```
 
-## 30.3 Tabella transcript_segments
+## 30.2 Tabella transcript_segments
 
 ```sql
 CREATE TABLE transcript_segments (
@@ -2379,7 +2458,7 @@ CREATE TABLE transcript_segments (
 );
 ```
 
-## 30.4 Tabella frames
+## 30.3 Tabella frames
 
 ```sql
 CREATE TABLE frames (
@@ -2395,7 +2474,7 @@ CREATE TABLE frames (
 );
 ```
 
-## 30.5 Tabella code_blocks
+## 30.4 Tabella code_blocks
 
 ```sql
 CREATE TABLE code_blocks (
@@ -2412,28 +2491,25 @@ CREATE TABLE code_blocks (
 );
 ```
 
-## 30.5.1 Tabella source_files
+## 30.4.1 Tabella source_files
 
 ```sql
 CREATE TABLE source_files (
     id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
     source_type TEXT NOT NULL,
     relative_path TEXT NOT NULL,
     language TEXT,
     file_hash TEXT,
     size_bytes INTEGER,
-    indexed_at TEXT,
-    FOREIGN KEY(project_id) REFERENCES projects(id)
+    indexed_at TEXT
 );
 ```
 
-## 30.5.2 Tabella codebase_snippets
+## 30.4.2 Tabella codebase_snippets
 
 ```sql
 CREATE TABLE codebase_snippets (
     id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
     source_file_id TEXT NOT NULL,
     relative_path TEXT NOT NULL,
     language TEXT,
@@ -2442,12 +2518,11 @@ CREATE TABLE codebase_snippets (
     end_line INTEGER,
     content TEXT NOT NULL,
     file_hash TEXT,
-    FOREIGN KEY(project_id) REFERENCES projects(id),
     FOREIGN KEY(source_file_id) REFERENCES source_files(id)
 );
 ```
 
-## 30.6 Tabella chunks
+## 30.5 Tabella chunks
 
 ```sql
 CREATE TABLE chunks (
@@ -2464,19 +2539,17 @@ CREATE TABLE chunks (
 );
 ```
 
-## 30.7 Tabella doc_sections
+## 30.6 Tabella doc_sections
 
 ```sql
 CREATE TABLE doc_sections (
     id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
     title TEXT NOT NULL,
     slug TEXT NOT NULL,
     markdown_path TEXT,
     source_chunks_json TEXT,
     generated_at TEXT,
-    reviewed INTEGER DEFAULT 0,
-    FOREIGN KEY(project_id) REFERENCES projects(id)
+    reviewed INTEGER DEFAULT 0
 );
 ```
 
@@ -2485,6 +2558,8 @@ CREATE TABLE doc_sections (
 # 32. Schema Qdrant
 
 Ogni chunk deve essere indicizzato in Qdrant con payload ricco.
+
+Coerentemente con l'isolamento per progetto descritto in [8.1.1 Isolamento dati per progetto](#811-isolamento-dati-per-progetto), Qdrant viene eseguito in modalità locale/embedded con lo storage dentro `projects/<slug>/indexes/`. Il campo `project_id` nel payload resta comunque utile come metadato descrittivo e per eventuali filtri interni, ma non serve più a separare i dati tra progetti: la separazione fisica è già garantita dalla cartella `indexes/` dedicata.
 
 Esempio payload:
 
@@ -2912,6 +2987,12 @@ La pipeline deve generare, poi revisionare. Non bisogna considerare la prima gen
 La logica deve vivere nel `core`.
 
 La CLI e la GUI devono essere solo interfacce verso il motore applicativo.
+
+## 37.8 Introdurre le dipendenze pesanti solo quando servono
+
+Le dipendenze pesanti (Ollama/LLM locale, faster-whisper, PaddleOCR/Surya/Tesseract, Qdrant, PySceneDetect) non devono essere richieste per far funzionare le fasi che non le usano.
+
+Per esempio, l'inizializzazione di un progetto (`videodoc init`) o la scansione delle fonti (`videodoc scan`) devono funzionare anche su una macchina senza Ollama, senza modelli di trascrizione o OCR installati e senza Qdrant in esecuzione. Ogni dipendenza pesante va introdotta solo quando si implementa la fase della pipeline che la richiede realmente, non prima.
 
 ---
 
