@@ -32,18 +32,19 @@
 26. [Fase 13 — Generazione delle sezioni Markdown](#26-fase-13--generazione-delle-sezioni-markdown)
 27. [Fase 14 — Revisione, validazione e controllo qualità](#27-fase-14--revisione-validazione-e-controllo-qualità)
 28. [Fase 15 — Export della documentazione](#28-fase-15--export-della-documentazione)
-29. [Configurazione del progetto](#29-configurazione-del-progetto)
-30. [Schema database SQLite](#30-schema-database-sqlite)
-31. [Schema Qdrant](#31-schema-qdrant)
-32. [Prompt principali](#32-prompt-principali)
-33. [Gestione del codice estratto dai video](#33-gestione-del-codice-estratto-dai-video)
-34. [Gestione dei materiali allegati](#34-gestione-dei-materiali-allegati)
-35. [Modalità operative](#35-modalità-operative)
-36. [Roadmap di sviluppo](#36-roadmap-di-sviluppo)
-37. [Best practice](#37-best-practice)
-38. [Limiti del sistema](#38-limiti-del-sistema)
-39. [Esempio di output Markdown generato](#39-esempio-di-output-markdown-generato)
-40. [Conclusione](#40-conclusione)
+29. [Fase 16 — Chat sulla documentazione e sui video](#29-fase-16--chat-sulla-documentazione-e-sui-video)
+30. [Configurazione del progetto](#30-configurazione-del-progetto)
+31. [Schema database SQLite](#31-schema-database-sqlite)
+32. [Schema Qdrant](#32-schema-qdrant)
+33. [Prompt principali](#33-prompt-principali)
+34. [Gestione del codice estratto dai video](#34-gestione-del-codice-estratto-dai-video)
+35. [Gestione dei materiali allegati](#35-gestione-dei-materiali-allegati)
+36. [Modalità operative](#36-modalita-operative)
+37. [Roadmap di sviluppo](#37-roadmap-di-sviluppo)
+38. [Best practice](#38-best-practice)
+39. [Limiti del sistema](#39-limiti-del-sistema)
+40. [Esempio di output Markdown generato](#40-esempio-di-output-markdown-generato)
+41. [Conclusione](#41-conclusione)
 
 ---
 
@@ -296,6 +297,10 @@ Generazione Markdown
 Revisione e validazione
    ↓
 Export documentazione
+   ↓
+Indicizzazione documentazione generata
+   ↓
+Chat su documentazione e video
 ```
 
 Dal punto di vista software, la stessa pipeline viene esposta da tre livelli distinti:
@@ -578,6 +583,7 @@ projects/
     ├── codebase/            # optional: repository o sorgenti collegati al corso
     ├── workdir/
     ├── indexes/
+    ├── sessions/
     └── docs/
 ```
 
@@ -822,6 +828,8 @@ videodoc outline corso-software-x
 videodoc generate corso-software-x
 videodoc review corso-software-x
 videodoc export corso-software-x --format mkdocs
+videodoc index-docs corso-software-x
+videodoc chat corso-software-x
 ```
 
 Deve inoltre essere possibile eseguire tutto con un solo comando:
@@ -867,6 +875,10 @@ ChunkingService
 EmbeddingService
 IndexingService
 RetrievalService
+DocumentationIndexService
+ChatRetrievalService
+ChatSessionService
+ChatAnswerService
 DocumentationService
 ReviewService
 ExportService
@@ -919,6 +931,7 @@ videodoc generate <project_name>
 videodoc review <project_name>
 videodoc export <project_name>
 videodoc ask <project_name> "domanda"
+videodoc chat <project_name>
 videodoc status <project_name>
 videodoc inspect <project_name> --timestamp 00:21:04
 ```
@@ -1022,6 +1035,8 @@ POST   /projects/{project_id}/ocr
 POST   /projects/{project_id}/generate
 GET    /projects/{project_id}/docs
 POST   /projects/{project_id}/ask
+POST   /projects/{project_id}/chat
+GET    /projects/{project_id}/chat/sessions
 GET    /projects/{project_id}/videos/{video_id}/inspect
 ```
 
@@ -1698,9 +1713,511 @@ nav:
   - Configurazione: configurazione.md
 ```
 
+
 ---
 
-# 29. Configurazione del progetto
+# 29. Fase 16 — Chat sulla documentazione e sui video
+
+Dopo la generazione, revisione ed export della documentazione, il progetto deve offrire una modalità di consultazione interattiva tramite chat e avere uno storico delle chat. Tutte le chat devono venire salvate nella cartella sessions/ del progetto, quando viene caricata una chat esistente bisogna passare al modello anche il contesto della chat in questione, così che il modello possa rispondere anche su argomenti già trattati.
+
+La chat deve essere disponibile sia da CLI sia da GUI e deve permettere all’utente di interrogare la knowledge base del progetto senza dover rileggere manualmente ore di video o numerosi file Markdown.
+
+Questa fase sfrutta il lavoro già completato nelle fasi precedenti:
+
+- trascrizioni audio;
+- OCR delle schermate;
+- blocchi di codice estratti;
+- chunk temporali;
+- embedding;
+- indice vettoriale;
+- documentazione Markdown generata;
+- riferimenti a video e timestamp.
+
+Per questo motivo, la modalità chat deve essere veloce: il sistema non deve rianalizzare i video, ma riutilizzare gli indici, i metadati e la documentazione già prodotti.
+
+## 29.1 Knowledge base predefinita della chat
+
+Di default, la chat deve usare come fonte principale la documentazione Markdown prodotta nella cartella `docs/`.
+
+Questa scelta è importante perché la documentazione generata rappresenta già una versione organizzata, sintetizzata e revisionabile della conoscenza estratta dai video.
+
+Flusso predefinito:
+
+```text
+Domanda utente
+   ↓
+Ricerca nella documentazione Markdown generata
+   ↓
+Recupero delle sezioni più rilevanti
+   ↓
+Eventuale recupero dei riferimenti video collegati
+   ↓
+Risposta con fonti e timestamp
+```
+
+La documentazione generata deve quindi essere indicizzata come fonte autonoma con `source_type = generated_documentation`.
+
+Esempio di chunk derivato dalla documentazione:
+
+```json
+{
+  "chunk_id": "doc_03_configurazione_ambiente_001",
+  "project_id": "corso-software-x",
+  "source_type": "generated_documentation",
+  "doc_path": "docs/03-configurazione-ambiente.md",
+  "section_title": "Configurazione ambiente",
+  "heading_path": [
+    "Configurazione ambiente",
+    "Procedura passo-passo"
+  ],
+  "text": "...",
+  "linked_sources": [
+    {
+      "video_name": "workshop_01_installazione.mp4",
+      "start_time": "00:18:20",
+      "end_time": "00:24:55"
+    }
+  ]
+}
+```
+
+In questo modo la chat risponde rapidamente usando i Markdown finali, ma può comunque mostrare all’utente i video e i timestamp originali.
+
+## 29.2 Domande mirate su uno o più video
+
+Oltre alla modalità predefinita basata sulla documentazione, l’utente deve poter indicare uno o più video specifici su cui fare domande mirate.
+
+Questo è utile quando l’utente vuole isolare un contenuto, verificare una spiegazione originale o interrogare solo una parte del corso.
+
+Esempi:
+
+```text
+Spiegami solo quello che viene detto nel video workshop_03_database.mp4.
+```
+
+```text
+Quali comandi vengono mostrati nel video workshop_01_installazione.mp4?
+```
+
+```text
+Confronta la procedura di deployment nei video 5 e 6.
+```
+
+Quando l’utente specifica uno o più video, il retrieval deve applicare un filtro sui `video_id` o sui nomi file indicati.
+
+Esempio di filtro interno:
+
+```json
+{
+  "project_id": "corso-software-x",
+  "video_ids": [
+    "workshop_03_database",
+    "workshop_04_api"
+  ],
+  "source_types": [
+    "chunk",
+    "transcript",
+    "ocr",
+    "code_block"
+  ],
+  "top_k": 12
+}
+```
+
+In questa modalità, la chat deve dare priorità ai chunk originali dei video selezionati, includendo trascrizione, OCR, codice e timestamp.
+
+## 29.3 Modalità di retrieval della chat
+
+La chat deve supportare tre modalità operative.
+
+### 29.3.1 Modalità `docs`
+
+È la modalità predefinita.
+
+Usa la documentazione Markdown generata come fonte principale.
+
+```bash
+videodoc ask corso-software-x "Come si configura il database?" --source docs
+```
+
+Se l’utente non specifica `--source`, questa modalità viene usata automaticamente.
+
+Vantaggi:
+
+- più veloce;
+- risposte più ordinate;
+- usa contenuti già sintetizzati;
+- ideale per consultazione quotidiana.
+
+### 29.3.2 Modalità `raw`
+
+Usa le fonti grezze indicizzate:
+
+- transcript;
+- OCR;
+- codice estratto;
+- chunk video;
+- frame observation;
+- materiali allegati;
+- codebase.
+
+Esempio:
+
+```bash
+videodoc ask corso-software-x \
+  "Quali comandi vengono eseguiti durante l’installazione?" \
+  --source raw
+```
+
+Questa modalità è utile quando serve verificare cosa appare realmente nel video, anche prima o indipendentemente dalla documentazione finale.
+
+### 29.3.3 Modalità `hybrid`
+
+Combina documentazione generata e fonti originali.
+
+```bash
+videodoc ask corso-software-x \
+  "Riassumi la configurazione iniziale e indicami i timestamp" \
+  --source hybrid
+```
+
+Flusso:
+
+```text
+Domanda utente
+   ↓
+Retrieval sui Markdown generati
+   ↓
+Retrieval sui chunk originali collegati
+   ↓
+Reranking
+   ↓
+Risposta finale con fonti documentali e timestamp video
+```
+
+Questa modalità è consigliata quando l’utente vuole una risposta sintetica, ma anche verificabile sulle fonti originali.
+
+## 29.4 Filtri supportati
+
+La chat deve permettere di filtrare il retrieval per:
+
+- progetto;
+- uno o più video;
+- intervallo temporale;
+- tipo di fonte;
+- presenza di codice;
+- documentazione generata;
+- trascrizione;
+- OCR;
+- allegati;
+- codebase.
+
+Esempio:
+
+```bash
+videodoc ask corso-software-x \
+  "Cosa succede in questa parte?" \
+  --video workshop_01_installazione.mp4 \
+  --from 00:18:00 \
+  --to 00:25:00
+```
+
+## 29.5 Comandi CLI della chat
+
+Comando base:
+
+```bash
+videodoc ask <project_name> "domanda"
+```
+
+Domanda su un video specifico:
+
+```bash
+videodoc ask <project_name> "domanda" --video workshop_01.mp4
+```
+
+Domanda su più video:
+
+```bash
+videodoc ask <project_name> "domanda" \
+  --video workshop_01.mp4 \
+  --video workshop_02.mp4
+```
+
+Domanda su un intervallo temporale:
+
+```bash
+videodoc ask <project_name> "domanda" \
+  --video workshop_01.mp4 \
+  --from 00:10:00 \
+  --to 00:25:00
+```
+
+Scelta esplicita della fonte:
+
+```bash
+videodoc ask <project_name> "domanda" --source docs
+videodoc ask <project_name> "domanda" --source raw
+videodoc ask <project_name> "domanda" --source hybrid
+```
+
+Sessione interattiva da terminale:
+
+```bash
+videodoc chat <project_name>
+```
+
+Sessione interattiva limitata a un video:
+
+```bash
+videodoc chat <project_name> --video workshop_03_database.mp4
+```
+
+## 29.6 GUI della chat
+
+La GUI deve includere una sezione `Chat` dentro ogni progetto.
+
+Funzioni principali:
+
+- apertura di una chat sul progetto;
+- scelta della modalità `docs`, `raw` o `hybrid`;
+- selezione di uno o più video;
+- filtro opzionale per timestamp;
+- visualizzazione delle fonti usate;
+- apertura del video al timestamp citato;
+- apertura della sezione Markdown collegata;
+- copia dei blocchi di codice;
+- salvataggio di una risposta come nota;
+- possibilità di trasformare una risposta in una nuova sezione Markdown.
+
+Layout concettuale:
+
+```text
+┌────────────────────────────────────────────┐
+│ Chat progetto: corso-software-x             │
+├────────────────────────────────────────────┤
+│ Modalità: [Documentazione ▼]                │
+│ Video:    [Tutti ▼]                         │
+│ Fonti:    [Docs] [Transcript] [OCR] [Code]  │
+├────────────────────────────────────────────┤
+│ Conversazione                               │
+│                                            │
+│ Utente: Come si configura il database?      │
+│                                            │
+│ Assistente: ...                            │
+│ Fonti:                                     │
+│ - docs/04-configurazione-database.md        │
+│ - workshop_03_database.mp4 00:12:10         │
+├────────────────────────────────────────────┤
+│ [Scrivi una domanda...] [Invia]             │
+└────────────────────────────────────────────┘
+```
+
+## 29.7 API web consigliate
+
+Endpoint consigliati:
+
+```text
+POST   /projects/{project_id}/chat
+GET    /projects/{project_id}/chat/sessions
+GET    /projects/{project_id}/chat/sessions/{session_id}
+DELETE /projects/{project_id}/chat/sessions/{session_id}
+```
+
+Esempio payload:
+
+```json
+{
+  "message": "Come si configura il database?",
+  "mode": "hybrid",
+  "video_ids": [
+    "workshop_03_database"
+  ],
+  "source_types": [
+    "generated_documentation",
+    "chunk",
+    "code_block"
+  ],
+  "time_range": null
+}
+```
+
+Esempio risposta:
+
+```json
+{
+  "answer": "La configurazione del database viene spiegata nel video workshop_03_database.mp4 tra 00:12:10 e 00:18:45...",
+  "sources": [
+    {
+      "source_type": "generated_documentation",
+      "doc_path": "docs/04-configurazione-database.md",
+      "section_title": "Configurazione database"
+    },
+    {
+      "source_type": "video",
+      "video_name": "workshop_03_database.mp4",
+      "start_time": "00:12:10",
+      "end_time": "00:18:45"
+    }
+  ]
+}
+```
+
+## 29.8 Servizi core per la chat
+
+Nel modulo `core` devono essere aggiunti servizi dedicati alla chat.
+
+Servizi consigliati:
+
+```text
+DocumentationIndexService
+ChatRetrievalService
+ChatSessionService
+ChatAnswerService
+SourceFilterService
+CitationService
+```
+
+Responsabilità:
+
+```text
+DocumentationIndexService
+  Indicizza la documentazione Markdown generata.
+
+ChatRetrievalService
+  Recupera fonti rilevanti in base alla domanda e ai filtri.
+
+ChatSessionService
+  Gestisce cronologia e sessioni chat.
+
+ChatAnswerService
+  Costruisce il prompt e genera la risposta.
+
+SourceFilterService
+  Applica filtri per video, timestamp e tipo fonte.
+
+CitationService
+  Normalizza e formatta le fonti citate nella risposta.
+```
+
+Regola architetturale:
+
+```text
+core contiene la logica della chat
+cli invoca i servizi del core
+gui invoca i servizi del core o le API FastAPI
+```
+
+## 29.9 Schema SQLite per la chat
+
+Tabella sessioni:
+
+```sql
+CREATE TABLE chat_sessions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    title TEXT,
+    default_source TEXT DEFAULT 'docs',
+    created_at TEXT,
+    updated_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+```
+
+Tabella messaggi:
+
+```sql
+CREATE TABLE chat_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    sources_json TEXT,
+    created_at TEXT,
+    FOREIGN KEY(session_id) REFERENCES chat_sessions(id)
+);
+```
+
+## 29.10 Schema Qdrant per la documentazione generata
+
+La documentazione Markdown deve essere indicizzata in Qdrant con payload dedicato.
+
+Esempio:
+
+```json
+{
+  "project_id": "corso-software-x",
+  "source_type": "generated_documentation",
+  "doc_path": "docs/04-configurazione-database.md",
+  "section_title": "Configurazione database",
+  "heading_path": "Configurazione database > Procedura passo-passo",
+  "linked_video_names": [
+    "workshop_03_database.mp4"
+  ],
+  "linked_timestamps": [
+    {
+      "video_name": "workshop_03_database.mp4",
+      "start_time": "00:12:10",
+      "end_time": "00:18:45"
+    }
+  ],
+  "text": "..."
+}
+```
+
+## 29.11 Prompt per la chat
+
+Prompt consigliato:
+
+```text
+Sei un assistente tecnico che risponde usando esclusivamente le fonti del progetto.
+
+Regole obbligatorie:
+- Usa solo le fonti fornite.
+- Se la risposta non è presente nelle fonti, dillo chiaramente.
+- Non inventare comandi, procedure, file o configurazioni.
+- Quando possibile, cita la sezione Markdown usata.
+- Quando possibile, cita anche video e timestamp.
+- Se il codice deriva da OCR incerto, segnala che deve essere verificato.
+- Se l’utente ha selezionato uno o più video, rispondi solo usando quei video.
+- Se l’utente ha scelto la modalità docs, usa principalmente la documentazione generata.
+- Se l’utente ha scelto la modalità raw, usa le fonti originali.
+- Se l’utente ha scelto la modalità hybrid, confronta documentazione e fonti originali.
+
+Domanda utente:
+{{question}}
+
+Modalità:
+{{mode}}
+
+Filtri:
+{{filters}}
+
+Fonti recuperate:
+{{sources}}
+
+Risposta:
+```
+
+## 29.12 Regola anti-allucinazione della chat
+
+La chat deve seguire una regola rigida:
+
+```text
+Se una risposta non è supportata dalla documentazione indicizzata o dai chunk originali recuperati, il sistema deve dichiarare che l’informazione non è disponibile nelle fonti del progetto.
+```
+
+Esempio:
+
+```markdown
+Non ho trovato nelle fonti del progetto una procedura completa per configurare Redis.
+
+Le fonti recuperate citano Redis solo brevemente nel video `workshop_04_cache.mp4` al timestamp `00:32:10`, ma non mostrano i comandi di configurazione.
+```
+
+---
+
+# 30. Configurazione del progetto
 
 Esempio completo di `config.yaml`:
 
@@ -1796,6 +2313,15 @@ documentation:
   include_common_errors: true
   include_sources_section: true
 
+chat:
+  default_source: "docs"
+  allow_raw_video_filter: true
+  allow_multi_video_filter: true
+  allow_time_range_filter: true
+  save_sessions: true
+  max_history_messages: 20
+  default_top_k: 8
+
 gui:
   enabled: false
   backend: "fastapi"
@@ -1806,7 +2332,7 @@ gui:
 
 ---
 
-# 30. Schema database SQLite
+# 31. Schema database SQLite
 
 SQLite serve per salvare metadati strutturati.
 
@@ -1956,7 +2482,7 @@ CREATE TABLE doc_sections (
 
 ---
 
-# 31. Schema Qdrant
+# 32. Schema Qdrant
 
 Ogni chunk deve essere indicizzato in Qdrant con payload ricco.
 
@@ -2011,7 +2537,7 @@ Nel retrieval, quando una risposta usa uno snippet della codebase, la sezione `F
 
 ---
 
-# 32. Prompt principali
+# 33. Prompt principali
 
 ## 32.1 Prompt per generare outline
 
@@ -2104,7 +2630,7 @@ Fonti:
 
 ---
 
-# 33. Gestione del codice estratto dai video
+# 34. Gestione del codice estratto dai video
 
 Il codice è la parte più delicata del progetto.
 
@@ -2163,7 +2689,7 @@ Motivo revisione: OCR sotto soglia minima.
 
 ---
 
-# 34. Gestione dei materiali allegati e della codebase
+# 35. Gestione dei materiali allegati e della codebase
 
 I video non dovrebbero essere l’unica fonte.
 
@@ -2209,7 +2735,7 @@ Il sistema deve evitare di indicizzare cartelle non pertinenti come `.git`, `nod
 
 ---
 
-# 35. Modalità operative
+# 36. Modalità operative
 
 ## 35.1 Modalità documentazione
 
@@ -2267,7 +2793,7 @@ videodoc gui dev corso-software-x
 
 ---
 
-# 36. Roadmap di sviluppo
+# 37. Roadmap di sviluppo
 
 ## 36.1 MVP 1 — Core pipeline base
 
@@ -2347,7 +2873,7 @@ Funzioni:
 
 ---
 
-# 37. Best practice
+# 38. Best practice
 
 ## 37.1 Salvare sempre i dati intermedi
 
@@ -2389,7 +2915,7 @@ La CLI e la GUI devono essere solo interfacce verso il motore applicativo.
 
 ---
 
-# 38. Limiti del sistema
+# 39. Limiti del sistema
 
 Il sistema può essere molto utile, ma ha limiti importanti.
 
@@ -2419,7 +2945,7 @@ La GUI aumenta la complessità del progetto. Per questo dovrebbe arrivare dopo u
 
 ---
 
-# 39. Esempio di output Markdown generato
+# 40. Esempio di output Markdown generato
 
 ````markdown
 # Installazione dell’ambiente
@@ -2466,7 +2992,7 @@ Al termine della procedura, il terminale deve trovarsi nella cartella del proget
 
 ---
 
-# 40. Conclusione
+# 41. Conclusione
 
 VideoDocRAG permette di trasformare video tecnici lunghi e difficili da consultare in documentazione Markdown strutturata, navigabile, interrogabile e versionabile.
 
@@ -2493,7 +3019,7 @@ gui  = interfaccia web opzionale
 La forma più efficace è una pipeline modulare:
 
 ```text
-Progetto → Scansione fonti → Video/Audio → Trascrizione → Frame → OCR → Codebase/Allegati → Chunk → Embedding → RAG → Markdown → Revisione → Export
+Progetto → Scansione fonti → Video/Audio → Trascrizione → Frame → OCR → Codebase/Allegati → Chunk → Embedding → RAG → Markdown → Revisione → Export → Chat
 ```
 
 Con questa architettura è possibile creare una base solida per generare documentazione tecnica da workshop, corsi, tutorial, demo software e registrazioni interne, mantenendo sempre il collegamento tra ogni informazione generata e la fonte video originale.
