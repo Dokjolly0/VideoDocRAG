@@ -10,6 +10,8 @@
 6. [Organizzazione modulare: core, CLI e GUI](#6-organizzazione-modulare-core-cli-e-gui)
 7. [Stack tecnologico consigliato](#7-stack-tecnologico-consigliato)
 8. [Struttura del progetto](#8-struttura-del-progetto)
+   - [8.2 Modello progetto per ogni RAG](#82-modello-progetto-per-ogni-rag)
+   - [8.3 Scansione delle fonti ed esclusioni](#83-scansione-delle-fonti-ed-esclusioni)
 9. [Formato dei dati e metadati](#9-formato-dei-dati-e-metadati)
 10. [Pipeline completa](#10-pipeline-completa)
 11. [Modulo core](#11-modulo-core)
@@ -53,7 +55,7 @@ Il sistema deve analizzare video di lunga durata, estrarre le informazioni princ
 
 Il progetto non deve essere limitato a un singolo software o a un singolo corso. Deve essere progettato come una pipeline general-purpose, configurabile e riutilizzabile su materiali diversi.
 
-L’obiettivo finale è ottenere un sistema in grado di prendere in input una cartella contenente video e materiali opzionali, per esempio repository, file sorgenti, slide, PDF o note, e produrre automaticamente una documentazione Markdown organizzata in sezioni, completa di spiegazioni, codice, procedure passo-passo, timestamp e riferimenti alle fonti.
+L’obiettivo finale è ottenere un sistema in grado di creare un progetto per ogni nuovo RAG e prendere in input una cartella strutturata contenente video obbligatori e materiali opzionali, per esempio allegati, repository, file sorgenti, slide, PDF o note. A partire da queste fonti, il sistema deve produrre automaticamente una documentazione Markdown organizzata in sezioni, completa di spiegazioni, codice, procedure passo-passo, timestamp e riferimenti alle fonti.
 
 Il sistema deve inoltre creare una base di conoscenza interrogabile tramite RAG, cioè Retrieval-Augmented Generation, così da poter fare domande ai contenuti dei video e generare nuove sezioni documentali basandosi sulle fonti estratte.
 
@@ -558,6 +560,116 @@ gui  ─┘
 
 Il modulo `core` deve rimanere puro e riusabile.
 
+## 8.2 Modello progetto per ogni RAG
+
+Ogni volta che viene inizializzato un nuovo RAG, il sistema deve creare un progetto isolato. Il progetto rappresenta l’unità logica e fisica di lavoro: contiene le fonti, la configurazione, gli indici, i dati intermedi e la documentazione finale.
+
+La cartella `videos/` è obbligatoria. Le cartelle `attachments/` e `codebase/` sono opzionali.
+
+Struttura consigliata:
+
+```text
+projects/
+└── corso-software-x/
+    ├── config.yaml
+    ├── sources.yaml
+    ├── videos/              # required
+    ├── attachments/         # optional: PDF, slide, documenti, note, zip, dataset
+    ├── codebase/            # optional: repository o sorgenti collegati al corso
+    ├── workdir/
+    ├── indexes/
+    └── docs/
+```
+
+Regole operative:
+
+- se è presente solo `videos/`, il RAG viene creato esclusivamente da video, audio, trascrizione, frame, OCR e codice estratto dal video;
+- se è presente anche `attachments/`, il RAG deve indicizzare i materiali allegati come fonti aggiuntive;
+- se è presente anche `codebase/`, il RAG deve sincronizzare e indicizzare la codebase oltre a video, audio e allegati;
+- ogni snippet derivato dalla codebase deve mantenere il riferimento al file sorgente, al percorso relativo, al linguaggio e, quando possibile, all’intervallo di righe;
+- quando un frammento di codice compare sia nel video sia nella codebase, la codebase ha priorità per il contenuto esatto, mentre il video resta la fonte del contesto operativo e dei timestamp.
+
+Esempio di progetto minimo:
+
+```text
+projects/corso-base/
+├── config.yaml
+├── sources.yaml
+├── videos/
+├── workdir/
+└── docs/
+```
+
+Esempio di progetto completo:
+
+```text
+projects/corso-avanzato/
+├── config.yaml
+├── sources.yaml
+├── videos/
+│   ├── workshop_01.mp4
+│   └── workshop_02.mp4
+├── attachments/
+│   ├── slides.pdf
+│   └── appunti.md
+├── codebase/
+│   ├── package.json
+│   ├── src/
+│   └── README.md
+├── workdir/
+├── indexes/
+└── docs/
+```
+
+## 8.3 Scansione delle fonti ed esclusioni
+
+La scansione del progetto deve essere configurabile. Di default il sistema deve ignorare directory tecniche o non pertinenti, per evitare di indicizzare file generati, cache, dipendenze esterne o artefatti di build.
+
+Esclusioni predefinite consigliate:
+
+```text
+.git/
+.hg/
+.svn/
+node_modules/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+dist/
+build/
+out/
+target/
+coverage/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.turbo/
+.vite/
+.DS_Store
+```
+
+Le esclusioni devono essere modificabili tramite configurazione, permettendo sia di aggiungere nuove regole sia di rimuovere una regola predefinita quando una cartella normalmente ignorata è invece rilevante per il corso.
+
+Esempio:
+
+```yaml
+scan:
+  default_excludes: true
+  add_excludes:
+    - "tmp/"
+    - "logs/"
+    - "*.min.js"
+  remove_excludes:
+    - "dist/"
+```
+
+In questo esempio `tmp/`, `logs/` e i file `*.min.js` vengono esclusi, mentre `dist/` viene reinclusa anche se normalmente sarebbe ignorata come cartella di build.
+
 ---
 
 # 9. Formato dei dati e metadati
@@ -647,6 +759,46 @@ Il sistema deve salvare informazioni strutturate per ogni video, segmento, frame
 }
 ```
 
+## 9.6 Codebase snippet
+
+Quando il progetto contiene una cartella `codebase/`, i file sorgenti devono essere indicizzati come snippet separati e collegati ai relativi file. Ogni snippet deve conservare il percorso relativo alla root della codebase.
+
+```json
+{
+  "snippet_id": "codebase_src_app_main_py_001",
+  "project_id": "corso-software-x",
+  "source_type": "codebase",
+  "file_path": "src/app/main.py",
+  "language": "python",
+  "start_line": 24,
+  "end_line": 58,
+  "symbol_name": "create_app",
+  "content": "def create_app():\n    ...",
+  "file_hash": "def456",
+  "metadata": {
+    "indexed_from": "codebase",
+    "link": "codebase/src/app/main.py#L24-L58"
+  }
+}
+```
+
+## 9.7 Material attachment
+
+Gli allegati caricati in `attachments/` devono essere tracciati come fonti documentali autonome.
+
+```json
+{
+  "attachment_id": "slides_intro_pdf",
+  "project_id": "corso-software-x",
+  "source_type": "attachment",
+  "file_path": "attachments/slides_intro.pdf",
+  "mime_type": "application/pdf",
+  "title": "Slide introduttive",
+  "extracted_text_path": "workdir/attachments/slides_intro/text.json",
+  "file_hash": "ghi789"
+}
+```
+
 ---
 
 # 10. Pipeline completa
@@ -657,7 +809,9 @@ Esempio di flusso da CLI:
 
 ```bash
 videodoc init corso-software-x
+videodoc scan corso-software-x
 videodoc ingest corso-software-x
+videodoc sync-codebase corso-software-x
 videodoc transcribe corso-software-x
 videodoc frames corso-software-x
 videodoc ocr corso-software-x
@@ -700,7 +854,10 @@ Esempi di servizi del core:
 
 ```text
 ProjectService
+SourceScanService
 VideoIngestionService
+AttachmentIngestionService
+CodebaseSyncService
 AudioExtractionService
 TranscriptionService
 FrameExtractionService
@@ -748,7 +905,9 @@ La CLI è il modo più semplice per usare e automatizzare il sistema.
 
 ```bash
 videodoc init <project_name>
+videodoc scan <project_name>
 videodoc ingest <project_name>
+videodoc sync-codebase <project_name>
 videodoc transcribe <project_name>
 videodoc frames <project_name>
 videodoc ocr <project_name>
@@ -890,9 +1049,11 @@ Output atteso:
 projects/corso-software-x/
 ├── config.yaml
 ├── sources.yaml
-├── videos/
-├── materials/
+├── videos/          # required
+├── attachments/     # optional
+├── codebase/        # optional
 ├── workdir/
+├── indexes/
 └── docs/
 ```
 
@@ -937,6 +1098,11 @@ documentation:
   include_code_explanation: true
   include_common_errors: true
   output_dir: "docs"
+
+scan:
+  default_excludes: true
+  add_excludes: []
+  remove_excludes: []
 ```
 
 ---
@@ -973,6 +1139,56 @@ workdir/
 ```
 
 Questa fase deve essere idempotente. Se un video è già stato registrato e l’hash non è cambiato, non deve essere processato nuovamente.
+
+## 15.1 Scansione progetto e sincronizzazione fonti
+
+Prima dell’ingestion, il sistema deve eseguire una scansione della cartella progetto per identificare le fonti disponibili:
+
+```text
+projects/<project_name>/
+├── videos/
+├── attachments/
+└── codebase/
+```
+
+La cartella `videos/` è obbligatoria. Se manca o non contiene video supportati, il progetto non può avviare la pipeline RAG.
+
+Le cartelle `attachments/` e `codebase/` sono opzionali:
+
+- `attachments/` viene usata per PDF, slide, documenti, note, file Markdown, archivi e altri materiali di supporto;
+- `codebase/` viene usata per sorgenti, repository o esempi di codice collegati ai video.
+
+Comando consigliato:
+
+```bash
+videodoc scan corso-software-x
+```
+
+Output atteso:
+
+```text
+Project: corso-software-x
+Videos: 8 found
+Attachments: 3 found
+Codebase: present
+Excluded directories: .git, node_modules, __pycache__, dist, build
+Sources manifest updated: sources.yaml
+```
+
+Se `codebase/` è presente, il sistema deve sincronizzarla in modo idempotente:
+
+```bash
+videodoc sync-codebase corso-software-x
+```
+
+La sincronizzazione deve:
+
+1. rispettare le esclusioni configurate;
+2. calcolare hash dei file;
+3. rilevare file nuovi, modificati o rimossi;
+4. estrarre snippet per file, simboli o blocchi logici;
+5. indicizzare gli snippet nel vector database;
+6. conservare per ogni snippet il link al file relativo, per esempio `codebase/src/app/main.py#L24-L58`.
 
 ---
 
@@ -1497,8 +1713,10 @@ project:
 
 paths:
   videos: "videos"
-  materials: "materials"
+  attachments: "attachments"
+  codebase: "codebase"
   workdir: "workdir"
+  indexes: "indexes"
   output: "docs"
 
 llm:
@@ -1545,9 +1763,29 @@ retrieval:
 
 code:
   extract_from_ocr: true
-  extract_from_materials: true
+  extract_from_attachments: true
+  extract_from_codebase: true
   strict_mode: true
   mark_uncertain_code: true
+
+scan:
+  default_excludes: true
+  add_excludes:
+    - "tmp/"
+    - "logs/"
+  remove_excludes: []
+  max_file_size_mb: 5
+  follow_symlinks: false
+  allowed_code_extensions:
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".tsx"
+    - ".jsx"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+    - ".md"
 
 documentation:
   format: "markdown"
@@ -1648,6 +1886,41 @@ CREATE TABLE code_blocks (
 );
 ```
 
+## 30.5.1 Tabella source_files
+
+```sql
+CREATE TABLE source_files (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    language TEXT,
+    file_hash TEXT,
+    size_bytes INTEGER,
+    indexed_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+```
+
+## 30.5.2 Tabella codebase_snippets
+
+```sql
+CREATE TABLE codebase_snippets (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    source_file_id TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    language TEXT,
+    symbol_name TEXT,
+    start_line INTEGER,
+    end_line INTEGER,
+    content TEXT NOT NULL,
+    file_hash TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    FOREIGN KEY(source_file_id) REFERENCES source_files(id)
+);
+```
+
 ## 30.6 Tabella chunks
 
 ```sql
@@ -1711,10 +1984,30 @@ Esempio payload:
 project_chunks
 project_code_blocks
 project_frames
-project_materials
+project_attachments
+project_codebase_files
+project_codebase_snippets
 ```
 
 Oppure una sola collection con `source_type` differenziato.
+
+Per gli snippet della codebase, il payload deve includere sempre il riferimento al file:
+
+```json
+{
+  "project_id": "corso-software-x",
+  "source_type": "codebase_snippet",
+  "file_path": "src/app/main.py",
+  "language": "python",
+  "symbol_name": "create_app",
+  "start_line": 24,
+  "end_line": 58,
+  "link": "codebase/src/app/main.py#L24-L58",
+  "text": "def create_app(): ..."
+}
+```
+
+Nel retrieval, quando una risposta usa uno snippet della codebase, la sezione `Fonti` deve riportare il percorso del file e, quando disponibili, le righe.
 
 ---
 
@@ -1870,25 +2163,49 @@ Motivo revisione: OCR sotto soglia minima.
 
 ---
 
-# 34. Gestione dei materiali allegati
+# 34. Gestione dei materiali allegati e della codebase
 
 I video non dovrebbero essere l’unica fonte.
 
-Il sistema deve poter importare:
+Il sistema deve poter importare materiali da due aree opzionali del progetto:
 
-- repository Git;
+```text
+attachments/
+codebase/
+```
+
+La cartella `attachments/` può contenere:
+
 - file `.zip`;
 - notebook;
 - slide;
 - PDF;
 - documenti Markdown;
-- file sorgenti;
+- documenti testuali;
 - configurazioni;
 - dataset di esempio.
 
-I materiali allegati sono spesso più affidabili del codice letto da video.
+La cartella `codebase/` può contenere:
 
-Se un comando o un file appare sia nel video sia nel repository, il repository deve avere priorità per il codice esatto, mentre il video fornisce il contesto procedurale.
+- repository Git copiati localmente;
+- file sorgenti;
+- esempi applicativi;
+- configurazioni di progetto;
+- script;
+- test;
+- documentazione tecnica collegata al codice.
+
+I materiali allegati e la codebase sono spesso più affidabili del codice letto da video.
+
+Se un comando o un file appare sia nel video sia nella codebase, la codebase deve avere priorità per il codice esatto, mentre il video fornisce il contesto procedurale, il timestamp e la spiegazione mostrata durante il workshop.
+
+Ogni snippet proveniente dalla codebase deve essere citabile nella documentazione con un riferimento simile a:
+
+```markdown
+Fonte codice: `codebase/src/app/main.py#L24-L58`
+```
+
+Il sistema deve evitare di indicizzare cartelle non pertinenti come `.git`, `node_modules`, `__pycache__` e artefatti di build, salvo diversa configurazione.
 
 ---
 
@@ -2176,7 +2493,7 @@ gui  = interfaccia web opzionale
 La forma più efficace è una pipeline modulare:
 
 ```text
-Video → Audio → Trascrizione → Frame → OCR → Codice → Chunk → Embedding → RAG → Markdown → Revisione → Export
+Progetto → Scansione fonti → Video/Audio → Trascrizione → Frame → OCR → Codebase/Allegati → Chunk → Embedding → RAG → Markdown → Revisione → Export
 ```
 
 Con questa architettura è possibile creare una base solida per generare documentazione tecnica da workshop, corsi, tutorial, demo software e registrazioni interne, mantenendo sempre il collegamento tra ogni informazione generata e la fonte video originale.
