@@ -1,0 +1,179 @@
+import pytest
+import yaml
+
+from videodoc.core.config import ProjectConfig
+from videodoc.core.errors import InvalidConfigError
+
+FULL_CONFIG_YAML = """
+project:
+  name: "Corso Software X"
+  slug: "corso-software-x"
+  language: "it"
+  timezone: "Europe/Rome"
+
+paths:
+  videos: "videos"
+  attachments: "attachments"
+  codebase: "codebase"
+  workdir: "workdir"
+  indexes: "indexes"
+  output: "docs"
+  database: "project.db"
+
+llm:
+  provider: "ollama"
+  model: "qwen2.5-coder:14b"
+  context_window: 32768
+  temperature: 0.1
+  top_p: 0.9
+
+embedding:
+  provider: "local"
+  model: "bge-m3"
+  batch_size: 32
+
+transcription:
+  engine: "faster-whisper"
+  model: "large-v3"
+  language: "it"
+  word_timestamps: true
+
+frames:
+  interval_seconds: 8
+  scene_detection: true
+  keyword_boost: true
+
+ocr:
+  engine: "paddleocr"
+  languages:
+    - "it"
+    - "en"
+  min_confidence: 0.65
+
+chunking:
+  min_duration_seconds: 90
+  max_duration_seconds: 480
+  split_on_topic_change: true
+  include_nearby_frames: true
+
+retrieval:
+  vector_db: "qdrant"
+  top_k: 12
+  rerank: true
+  hybrid_search: true
+
+code:
+  extract_from_ocr: true
+  extract_from_attachments: true
+  extract_from_codebase: true
+  strict_mode: true
+  mark_uncertain_code: true
+
+scan:
+  default_excludes: true
+  add_excludes:
+    - "tmp/"
+    - "logs/"
+  remove_excludes: []
+  max_file_size_mb: 5
+  follow_symlinks: false
+  allowed_code_extensions:
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".tsx"
+    - ".jsx"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+    - ".md"
+
+documentation:
+  format: "markdown"
+  include_video_name: true
+  include_timestamps: true
+  include_code_explanation: true
+  include_expected_result: true
+  include_common_errors: true
+  include_sources_section: true
+
+chat:
+  default_source: "docs"
+  allow_raw_video_filter: true
+  allow_multi_video_filter: true
+  allow_time_range_filter: true
+  save_sessions: true
+  max_history_messages: 20
+  default_top_k: 8
+
+gui:
+  enabled: false
+  backend: "fastapi"
+  frontend: "react"
+  host: "127.0.0.1"
+  port: 8000
+"""
+
+
+def test_default_config_roundtrip():
+    config = ProjectConfig.default(name="Demo Course", slug="demo-course")
+    reparsed = ProjectConfig.model_validate(yaml.safe_load(config.to_yaml()))
+    assert reparsed == config
+
+
+def test_load_full_readme_example(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(FULL_CONFIG_YAML, encoding="utf-8")
+    config = ProjectConfig.load(path)
+    assert config.llm.model == "qwen2.5-coder:14b"
+    assert config.scan.allowed_code_extensions == [
+        ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml", ".md",
+    ]
+    assert config.paths.database == "project.db"
+
+
+def test_missing_required_field_raises(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("project:\n  slug: demo\n", encoding="utf-8")
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+def test_unknown_key_raises(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "project:\n  name: Demo\n  slug: demo\nllm:\n  foo: 1\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+def test_invalid_yaml_raises(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("project: [unclosed", encoding="utf-8")
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        "llm:\n  temperature: 5.0\n",
+        "retrieval:\n  top_k: 0\n",
+        "chunking:\n  min_duration_seconds: 500\n  max_duration_seconds: 100\n",
+    ],
+)
+def test_range_and_cross_field_validation(tmp_path, override):
+    path = tmp_path / "config.yaml"
+    path.write_text(f"project:\n  name: Demo\n  slug: demo\n{override}", encoding="utf-8")
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+def test_save_writes_reloadable_file(tmp_path):
+    config = ProjectConfig.default(name="Demo", slug="demo")
+    path = tmp_path / "config.yaml"
+    config.save(path)
+    reloaded = ProjectConfig.load(path)
+    assert reloaded == config

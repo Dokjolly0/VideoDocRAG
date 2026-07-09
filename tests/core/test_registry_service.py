@@ -1,0 +1,100 @@
+import json
+import logging
+from pathlib import Path
+
+import pytest
+
+import videodoc.core.services.registry_service as registry_module
+from videodoc.core.errors import ProjectNotFoundError, RegistryConflictError
+from videodoc.core.services.registry_service import ProjectRegistry
+
+
+def test_default_path_respects_env_var(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEODOC_DATA_DIR", str(tmp_path / "custom"))
+    assert ProjectRegistry.default_path() == tmp_path / "custom" / "registry.json"
+
+
+def test_default_path_falls_back_to_platformdirs(tmp_path, monkeypatch):
+    monkeypatch.delenv("VIDEODOC_DATA_DIR", raising=False)
+    monkeypatch.setattr(
+        registry_module.platformdirs, "user_data_dir", lambda *a, **k: str(tmp_path / "platformdirs-fallback")
+    )
+    assert ProjectRegistry.default_path() == tmp_path / "platformdirs-fallback" / "registry.json"
+
+
+def test_empty_registry_does_not_create_file(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    registry = ProjectRegistry(registry_path)
+    assert registry.list_all() == []
+    assert not registry_path.exists()
+
+
+def test_register_creates_file_and_is_visible_from_new_instance(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    ProjectRegistry(registry_path).register("demo", tmp_path / "demo")
+    assert registry_path.exists()
+    entries = ProjectRegistry(registry_path).list_all()
+    assert [e.name for e in entries] == ["demo"]
+
+
+def test_register_is_idempotent_for_same_path(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    project_dir = tmp_path / "demo"
+    registry = ProjectRegistry(registry_path)
+    registry.register("demo", project_dir)
+    registry.register("demo", project_dir)
+    assert len(registry.list_all()) == 1
+
+
+def test_register_conflict_on_different_path(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    registry = ProjectRegistry(registry_path)
+    registry.register("demo", tmp_path / "demo-a")
+    with pytest.raises(RegistryConflictError):
+        registry.register("demo", tmp_path / "demo-b")
+
+
+def test_unlink_removes_entry(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    registry = ProjectRegistry(registry_path)
+    registry.register("demo", tmp_path / "demo")
+    registry.unlink("demo")
+    assert registry.list_all() == []
+
+
+def test_unlink_unknown_raises(tmp_path):
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    with pytest.raises(ProjectNotFoundError):
+        registry.unlink("nope")
+
+
+def test_resolve_unknown_returns_none(tmp_path):
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    assert registry.resolve("nope") is None
+
+
+def test_corrupted_registry_is_quarantined(tmp_path, caplog):
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text("not valid json", encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        entries = ProjectRegistry(registry_path).list_all()
+    assert entries == []
+    corrupted = list(tmp_path.glob("registry.json.corrupted-*"))
+    assert len(corrupted) == 1
+    assert "corrupted" in caplog.text.lower()
+
+
+def test_registry_missing_projects_key_is_quarantined(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
+    assert ProjectRegistry(registry_path).list_all() == []
+    assert list(tmp_path.glob("registry.json.corrupted-*"))
+
+
+def test_registered_paths_are_absolute(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    registry_path = tmp_path / "registry.json"
+    registry = ProjectRegistry(registry_path)
+    registry.register("demo", Path("relative-dir"))
+    resolved = registry.resolve("demo")
+    assert resolved.is_absolute()
