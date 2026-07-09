@@ -34,10 +34,11 @@ def _safe_slugify(name: str) -> str:
 
 @dataclass(frozen=True)
 class ProjectInitResult:
-    name: str
+    name: str  # the registry key actually used: the project's slug by default, or an explicit alias (see `link`)
     project_dir: Path
     config_path: Path
     created: bool  # False if config.yaml already existed (idempotent rerun)
+    canonical_slug: str  # the project's own identity (config.project.slug); differs from `name` only when aliased
 
 
 class ProjectService:
@@ -100,7 +101,9 @@ class ProjectService:
 
         # 4. Registration (idempotent by construction of ProjectRegistry.register).
         registry.register(slug, target_dir)
-        return ProjectInitResult(name=slug, project_dir=target_dir, config_path=config_path, created=created)
+        return ProjectInitResult(
+            name=slug, project_dir=target_dir, config_path=config_path, created=created, canonical_slug=slug
+        )
 
     @classmethod
     def load(cls, reference: str, *, registry: ProjectRegistry | None = None) -> "ProjectService":
@@ -131,12 +134,30 @@ class ProjectService:
     def link(
         cls, path: Path, *, name: str | None = None, registry: ProjectRegistry | None = None
     ) -> ProjectInitResult:
+        """Register an existing project (one with a valid config.yaml already
+        on disk) in the local registry.
+
+        By default the registry key is the project's own canonical identity
+        (`config.project.slug`). Passing `name` registers it under an
+        explicit, deliberately different local *alias* instead -- useful to
+        resolve a slug collision between two unrelated projects, or to give
+        a project a shorter local nickname. An alias is still normalized
+        through `slugify()` like every other registry key (so it stays
+        quoting-free in later commands); it does NOT rewrite the project's
+        own config.yaml, which keeps its original slug.
+        """
         resolved = path.resolve()
         config_path = resolved / "config.yaml"
         if not config_path.is_file():
             raise InvalidConfigError(f"No config.yaml found at {resolved}; not a valid VideoDocRAG project.")
         config = ProjectConfig.load(config_path)
-        reg_name = name or config.project.slug
+        reg_name = _safe_slugify(name) if name is not None else config.project.slug
         registry = registry or ProjectRegistry()
         registry.register(reg_name, resolved)
-        return ProjectInitResult(name=reg_name, project_dir=resolved, config_path=config_path, created=False)
+        return ProjectInitResult(
+            name=reg_name,
+            project_dir=resolved,
+            config_path=config_path,
+            created=False,
+            canonical_slug=config.project.slug,
+        )

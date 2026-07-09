@@ -9,8 +9,8 @@ Since a VideoDocRAG project can live anywhere on disk (README §4.7/§8.1.2) rat
 - Registry robustness: the file is created lazily (never on a pure read), writes are atomic (`.tmp` + `replace`), and a corrupted/invalid registry file is quarantined (renamed to `registry.json.corrupted-<timestamp>`) with a warning instead of crashing any command.
 - Per-entry robustness: a single malformed entry (missing/invalid `path` or `created_at`) is handled leniently instead of raising — `list_all`/`resolve` skip it (with a warning), `register` treats it as absent and heals it with a fresh valid entry, and `unlink` can *always* remove it (removal only pops a dict key, it never needs to parse the entry first). This matters because `unlink` is the tool meant to clean up bad state; it must never be the thing a malformed entry blocks.
 - Conflict handling: registering the same name at a different path raises `RegistryConflictError` — checked *before* any folder is created on disk (fail-fast, no partial state).
-- The registry key is always the project's slug (see `docs/features/slugify.md`), never a raw display name — this keeps `init` and `link` in agreement on the same identifier for the same project.
-- CLI commands: `videodoc list`, `videodoc link <path>`, `videodoc unlink <name>` (registry-only, never deletes files), `videodoc path <name>`.
+- The registry key defaults to the project's own canonical slug (see `docs/features/slugify.md`), never a raw display name — this keeps `init` and `link` in agreement on the same identifier for the same project. `link --name <alias>` is the one documented, explicit exception: it registers the project under a deliberately different, still slug-normalized local alias, without touching the project's own `config.yaml`.
+- CLI commands: `videodoc list`, `videodoc link <path> [--name <alias>]`, `videodoc unlink <name>` (registry-only, never deletes files), `videodoc path <name>`.
 
 ## Main files
 - `src/videodoc/core/services/registry_service.py` — `ProjectRegistry`.
@@ -32,6 +32,7 @@ On a machine where `python`/`pip` resolve to the Microsoft Store package (`Pytho
 ```bash
 videodoc list
 videodoc link "D:\Corsi\corso-software-x"
+videodoc link "D:\Corsi\corso-software-x" --name "nickname-breve"   # explicit alias, see docs/features/slugify.md
 videodoc unlink corso-software-x
 videodoc path corso-software-x
 ```

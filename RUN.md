@@ -164,10 +164,18 @@ Se una cartella progetto (con un `config.yaml` valido) esiste già ma non è nel
 videodoc link "D:\Corsi\corso-software-x"
 ```
 
-Per registrarla con un nome diverso dallo slug presente in `config.yaml`:
+`--name` registra il progetto sotto un **alias locale esplicito**, diverso dallo slug canonico presente nel suo `config.yaml` — utile per risolvere una collisione locale tra due progetti il cui slug coincide per caso, o per usare un nickname più corto. Non modifica mai il `config.yaml` del progetto: l'identità "vera" resta quella scritta lì. L'alias viene comunque normalizzato con le stesse regole dello slug (niente spazi/maiuscole/punteggiatura nel registro), e il comando lo segnala esplicitamente in output quando differisce dallo slug reale:
 
 ```powershell
-videodoc link "D:\Corsi\corso-software-x" --name altro-nome
+videodoc link "D:\Corsi\corso-software-x" --name "Alias Locale!!"
+# Linked as alias 'alias-locale' -> D:\Corsi\corso-software-x (the project's own slug is 'corso-software-x')
+```
+
+Se invece non lo differenzi mai, il comando registra semplicemente con lo slug canonico e lo dice senza menzionare alcun alias:
+
+```powershell
+videodoc link "D:\Corsi\corso-software-x"
+# Linked 'corso-software-x' -> D:\Corsi\corso-software-x
 ```
 
 ### 5.5 Rimuovere un progetto dal registro (senza cancellare i file)

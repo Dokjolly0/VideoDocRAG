@@ -162,7 +162,33 @@ def test_link_registers_existing_project_with_its_slug(tmp_path):
     other_registry = ProjectRegistry(tmp_path / "other-registry.json")
     linked = ProjectService.link(result.project_dir, registry=other_registry)
     assert linked.name == "demo"
+    assert linked.canonical_slug == "demo"
     assert other_registry.resolve("demo") == result.project_dir
+
+
+def test_link_with_explicit_alias_is_slugified_and_flagged(tmp_path):
+    """--name is a deliberate local alias, distinct from the project's own
+    canonical slug -- but it must still be normalized to a slug like every
+    other registry key, and the divergence must be visible via canonical_slug."""
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    result = ProjectService.init("Corso Software X", path=tmp_path / "corso", registry=registry)
+
+    other_registry = ProjectRegistry(tmp_path / "other-registry.json")
+    linked = ProjectService.link(result.project_dir, name="Alias Locale!!", registry=other_registry)
+
+    assert linked.name == "alias-locale"
+    assert linked.canonical_slug == "corso-software-x"
+    assert other_registry.resolve("alias-locale") == result.project_dir
+    # link() never rewrites the project's own config.yaml.
+    assert linked.canonical_slug != linked.name
+
+
+def test_link_with_invalid_alias_raises_domain_error(tmp_path):
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    result = ProjectService.init("demo", path=tmp_path / "demo", registry=registry)
+
+    with pytest.raises(InvalidProjectNameError):
+        ProjectService.link(result.project_dir, name="!!!", registry=ProjectRegistry(tmp_path / "reg2.json"))
 
 
 def test_link_without_config_raises(tmp_path):

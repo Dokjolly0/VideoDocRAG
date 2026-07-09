@@ -94,6 +94,28 @@ def test_link_without_config_fails(tmp_path):
     assert result.exit_code == 1
 
 
+def test_link_with_explicit_alias_is_flagged_in_output(tmp_path):
+    custom = tmp_path / "corso"
+    runner.invoke(app, ["init", "Corso Software X", "--path", str(custom)])
+
+    result = runner.invoke(app, ["link", str(custom), "--name", "Alias Locale!!"])
+    assert result.exit_code == 0
+    assert "alias" in result.stdout.lower()
+    assert "alias-locale" in result.stdout
+    assert "corso-software-x" in result.stdout
+
+    list_result = runner.invoke(app, ["list"])
+    assert "alias-locale" in list_result.stdout
+
+
+def test_link_with_invalid_alias_fails(tmp_path):
+    custom = tmp_path / "demo"
+    runner.invoke(app, ["init", "demo", "--path", str(custom)])
+
+    result = runner.invoke(app, ["link", str(custom), "--name", "!!!"])
+    assert result.exit_code == 1
+
+
 def test_unlink_does_not_delete_files(tmp_path):
     custom = tmp_path / "demo"
     runner.invoke(app, ["init", "demo", "--path", str(custom)])
