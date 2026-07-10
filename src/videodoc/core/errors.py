@@ -40,3 +40,12 @@ class InvalidVideoMetadataError(VideoDocError):
 
 class DatabaseError(VideoDocError):
     """Raised when a structural (not per-video) failure occurs reading or writing project.db."""
+
+
+class TranscriptionEngineError(VideoDocError):
+    """Raised when config.transcription.engine is unsupported, or the configured
+    transcription engine/model could not be loaded at all."""
+
+
+class InvalidTranscriptError(VideoDocError):
+    """Raised when a video's transcript JSON is missing, malformed, or fails validation."""

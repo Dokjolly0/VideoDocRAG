@@ -4,7 +4,15 @@ import sqlite3
 import pytest
 
 from videodoc.core.errors import DatabaseError
-from videodoc.core.storage.database import VideoRow, ensure_schema, get_video, list_videos, upsert_video
+from videodoc.core.storage.database import (
+    TranscriptSegmentRow,
+    VideoRow,
+    ensure_schema,
+    get_video,
+    list_videos,
+    replace_transcript_segments,
+    upsert_video,
+)
 
 
 def _row(**overrides) -> VideoRow:
@@ -115,3 +123,57 @@ def test_list_videos_wraps_sqlite_error(tmp_path):
     db_path.mkdir()
     with pytest.raises(DatabaseError):
         list_videos(db_path)
+
+
+def _segment(**overrides) -> TranscriptSegmentRow:
+    defaults = dict(
+        id="demo_seg_0000", video_id="demo", start_seconds=0.0, end_seconds=2.5,
+        text="Ciao a tutti", confidence=0.9,
+    )
+    defaults.update(overrides)
+    return TranscriptSegmentRow(**defaults)
+
+
+def _fetch_segments(db_path, video_id):
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        return conn.execute(
+            "SELECT id, video_id, start_seconds, end_seconds, text, confidence "
+            "FROM transcript_segments WHERE video_id = ? ORDER BY id",
+            (video_id,),
+        ).fetchall()
+
+
+def test_ensure_schema_also_creates_transcript_segments_table(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    ensure_schema(db_path)  # idempotent
+    assert _fetch_segments(db_path, "demo") == []
+
+
+def test_replace_transcript_segments_inserts(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_transcript_segments(db_path, "demo", [_segment(), _segment(id="demo_seg_0001", start_seconds=2.5, end_seconds=5.0)])
+
+    rows = _fetch_segments(db_path, "demo")
+    assert [r[0] for r in rows] == ["demo_seg_0000", "demo_seg_0001"]
+
+
+def test_replace_transcript_segments_replaces_not_appends(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_transcript_segments(db_path, "demo", [_segment()])
+    replace_transcript_segments(db_path, "demo", [_segment(id="demo_seg_0000", text="updated text")])
+
+    rows = _fetch_segments(db_path, "demo")
+    assert len(rows) == 1
+    assert rows[0][4] == "updated text"
+
+
+def test_replace_transcript_segments_wraps_sqlite_error(tmp_path):
+    db_path = tmp_path / "not-a-file"
+    db_path.mkdir()
+    with pytest.raises(DatabaseError):
+        replace_transcript_segments(db_path, "demo", [_segment()])

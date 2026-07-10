@@ -1,6 +1,16 @@
 import typer
 
-from videodoc.cli.commands import extract_audio, ingest, init, link, list_projects, path as path_cmd, scan, unlink
+from videodoc.cli.commands import (
+    extract_audio,
+    ingest,
+    init,
+    link,
+    list_projects,
+    path as path_cmd,
+    scan,
+    transcribe,
+    unlink,
+)
 
 app = typer.Typer(name="videodoc", help="VideoDocRAG command-line interface.", no_args_is_help=True)
 app.command("init")(init.init_command)
@@ -11,6 +21,7 @@ app.command("path")(path_cmd.path_command)
 app.command("scan")(scan.scan_command)
 app.command("ingest")(ingest.ingest_command)
 app.command("extract-audio")(extract_audio.extract_audio_command)
+app.command("transcribe")(transcribe.transcribe_command)
 
 
 def main() -> None:

@@ -152,3 +152,23 @@ Project: corso-software-x
 Audio extracted: 0, skipped (already extracted): 8
 ```
 **Vedi anche:** [features/audio-extraction.md](features/audio-extraction.md)
+
+---
+
+## transcribe
+
+**Sintassi:** `videodoc transcribe <project>`
+**Descrizione:** Per ogni video con audio già estratto, trascrive con `faster-whisper` in `workdir/<id>/transcript/<id>.json` e nella tabella `transcript_segments` di `project.db`, aggiornando `metadata.json` (`transcript_path`). Idempotente per presenza del file: se il transcript esiste già, il motore non viene invocato (ma le righe DB vengono comunque riallineate dal JSON, per auto-ripararsi da un eventuale fallimento DB precedente).
+**Exit code:** 0 = successo, anche con errori per-video (trascrizione fallita su un singolo file: stampati come `Warning`, il video viene saltato, gli altri continuano). 1 = progetto sconosciuto, `config.yaml` non valido, **nessun video ancora registrato** (`ingest` mai eseguito) o **nessun video con audio estratto** (`extract-audio` mai eseguito), engine non supportato (solo `faster-whisper` è implementato), modello non caricabile, o problema strutturale su `project.db`.
+**Prerequisito:** `faster-whisper` è una dipendenza richiesta (installata automaticamente); al primo utilizzo reale scarica il modello configurato (default `large-v3`, diversi GB) da Hugging Face — vedi `RUN.md` §1.
+**Esempio:**
+```
+$ videodoc transcribe corso-software-x
+Project: corso-software-x
+Transcribed: 8, skipped (already transcribed): 0
+
+$ videodoc transcribe corso-software-x
+Project: corso-software-x
+Transcribed: 0, skipped (already transcribed): 8
+```
+**Vedi anche:** [features/transcription.md](features/transcription.md)

@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`; Step 4: estrazione audio — `extract-audio`) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`; Step 4: estrazione audio — `extract-audio`; Step 5: trascrizione audio — `transcribe`) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -47,6 +47,8 @@ Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocc
   ffprobe -version
   ffmpeg -version
   ```
+
+- **`faster-whisper`, richiesto da `videodoc transcribe`** (Step 5), è una dipendenza Python normale: viene installata automaticamente da `pip install -e ".[dev]"` (§3), nessun passo manuale aggiuntivo. Al **primo utilizzo reale** di `transcribe`, scarica da Hugging Face il modello configurato in `config.yaml` (`transcription.model`, default `large-v3`, diversi GB) — la prima esecuzione può richiedere tempo e spazio su disco significativi, soprattutto su CPU senza GPU dedicata. Vedi §8 per un problema noto relativo al rilevamento hardware.
 
 ## 2. Nota importante: quale Python usare
 
@@ -362,6 +364,32 @@ Audio extracted: 0, skipped (already extracted): 8
 
 Se nessun video è ancora stato registrato (`ingest` non è mai stato eseguito) o se `ffmpeg` non è disponibile in `PATH`, il comando fallisce subito (`exit code` 1) senza creare o modificare nulla. Un problema di estrazione su un singolo video (es. codec non supportato) non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0.
 
+### 5.9 Trascrivere l'audio di un progetto
+
+Per ogni video con audio già estratto, trascrive con `faster-whisper` (vedi §1 per la nota sul download del modello) in `workdir/<id>/transcript/<id>.json` e nella tabella `transcript_segments` di `project.db`, aggiornando `metadata.json`:
+
+```bash
+videodoc transcribe corso-software-x
+```
+
+```text
+Project: corso-software-x
+Transcribed: 8, skipped (already transcribed): 0
+```
+
+È idempotente per presenza del file: rilanciandolo, i video già trascritti vengono saltati senza richiamare il motore di trascrizione (il modello, potenzialmente pesante da caricare, non viene nemmeno inizializzato se non c'è nulla da fare):
+
+```bash
+videodoc transcribe corso-software-x
+```
+
+```text
+Project: corso-software-x
+Transcribed: 0, skipped (already transcribed): 8
+```
+
+Se nessun video ha ancora l'audio estratto (`extract-audio` non è mai stato eseguito), il comando fallisce subito (`exit code` 1) senza caricare alcun modello. Un problema di trascrizione su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0 — vedi §8 per un caso reale (libreria CUDA mancante) riscontrato durante lo sviluppo.
+
 ## 6. Personalizzare i percorsi (variabili d'ambiente)
 
 Due variabili d'ambiente permettono di controllare dove VideoDocRAG legge/scrive i propri dati, utili per test, ambienti sandbox o setup non standard:
@@ -471,12 +499,22 @@ Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.all
 **`videodoc ingest` fallisce con "ffprobe ... was not found on PATH".**
 FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
 
+**`videodoc transcribe` fallisce con un errore che menziona `cublas` o una libreria CUDA mancante.**
+`faster-whisper` rileva automaticamente l'hardware disponibile e, su una macchina dove viene individuata una GPU ma mancano le librerie runtime CUDA (es. `cublas64_12.dll` su Windows), fallisce invece di ripiegare in modo pulito sulla CPU. **Dove esattamente fallisce cambia il comportamento del comando**, e dipende da un dettaglio interno di `faster-whisper`/`ctranslate2` non controllabile da questo codice:
+- Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.
+- Se invece il problema impedisce già il caricamento del modello stesso (`WhisperModel(...)`) — è strutturale, non recuperabile per l'intero run: il comando fallisce con `Error: Could not load transcription engine ...` ed `exit code` `1`, senza processare alcun video.
+
+Non esiste ancora un'opzione di configurazione per forzare esplicitamente l'esecuzione su CPU (`config.transcription` non ha un campo `device`/`compute_type`); se il problema persiste, verifica l'installazione dei driver/runtime CUDA o esegui su una macchina senza GPU rilevata.
+
+**`videodoc transcribe` è molto lento o scarica diversi GB al primo avvio.**
+Il modello configurato (default `transcription.model: large-v3`) viene scaricato da Hugging Face al primo utilizzo reale e può essere lento su CPU. Per una prova rapida, modifica temporaneamente `transcription.model` in `config.yaml` con un modello più piccolo (es. `tiny` o `base`).
+
 ## 9. Cosa non è ancora disponibile
 
-Questi quattro step coprono la gestione dei progetti, la scansione delle fonti, l'ingestion dei video e l'estrazione audio. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi cinque step coprono la gestione dei progetti, la scansione delle fonti, l'ingestion dei video, l'estrazione audio e la trascrizione. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
 - `videodoc sync-codebase` — sincronizzazione e indicizzazione della codebase;
-- `videodoc transcribe`, `frames`, `ocr`, `code` — trascrizione audio, estrazione frame, OCR, riconoscimento codice;
+- `videodoc frames`, `ocr`, `code` — estrazione frame, OCR, riconoscimento codice;
 - `videodoc chunk`, `index` — chunking ed embedding/indicizzazione vettoriale;
 - `videodoc outline`, `generate`, `review`, `export` — generazione e revisione della documentazione;
 - `videodoc ask`, `chat` — interrogazione RAG e chat sulla knowledge base;

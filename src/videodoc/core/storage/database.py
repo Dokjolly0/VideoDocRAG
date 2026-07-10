@@ -24,6 +24,21 @@ CREATE TABLE IF NOT EXISTS videos (
 );
 """
 
+# README §31/§30.2 -- see core/models/transcript.py for the note on why this
+# shape (start_seconds/end_seconds REAL) was chosen over the other two
+# inconsistent shapes README shows elsewhere for a transcript segment.
+_CREATE_TRANSCRIPT_SEGMENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS transcript_segments (
+    id TEXT PRIMARY KEY,
+    video_id TEXT NOT NULL,
+    start_seconds REAL NOT NULL,
+    end_seconds REAL NOT NULL,
+    text TEXT NOT NULL,
+    confidence REAL,
+    FOREIGN KEY(video_id) REFERENCES videos(id)
+);
+"""
+
 
 @dataclass(frozen=True)
 class VideoRow:
@@ -36,8 +51,18 @@ class VideoRow:
     created_at: str  # ISO 8601 UTC; only actually applied on first INSERT, see upsert_video
 
 
+@dataclass(frozen=True)
+class TranscriptSegmentRow:
+    id: str  # "<video_id>_seg_<0001>" -- globally unique, this table's id is a single PK, not composite
+    video_id: str
+    start_seconds: float
+    end_seconds: float
+    text: str
+    confidence: float | None
+
+
 def ensure_schema(db_path: Path) -> None:
-    """Create the videos table if it doesn't exist yet. Idempotent."""
+    """Create every project.db table if it doesn't exist yet. Idempotent."""
     try:
         # sqlite3.Connection's own context-manager protocol only wraps
         # commit/rollback -- it does NOT close the connection on exit
@@ -46,6 +71,7 @@ def ensure_schema(db_path: Path) -> None:
         # commit-on-success/rollback-on-error behavior on top of that.
         with closing(sqlite3.connect(db_path)) as conn, conn:
             conn.execute(_CREATE_VIDEOS_TABLE)
+            conn.execute(_CREATE_TRANSCRIPT_SEGMENTS_TABLE)
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot initialize schema in {db_path}: {exc}") from exc
 
@@ -118,3 +144,32 @@ def upsert_video(db_path: Path, row: VideoRow) -> None:
             )
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot write video '{row.id}' to {db_path}: {exc}") from exc
+
+
+def replace_transcript_segments(db_path: Path, video_id: str, segments: list[TranscriptSegmentRow]) -> None:
+    """Full replace, not an incremental upsert: deletes any existing rows
+    for video_id, then inserts the given set, in one transaction. A
+    re-transcription is a wholesale regeneration, not a merge -- matches
+    how sources.yaml is always fully regenerated on scan, never merged.
+
+    Called on both the fresh-transcription path and the skip-because-
+    already-transcribed path (see TranscriptionService): cheap enough
+    (DELETE+INSERT of already-known rows) to call every run, which lets a
+    prior transient DB failure self-heal instead of staying silently
+    empty forever once the transcript JSON file already exists."""
+    try:
+        with closing(sqlite3.connect(db_path)) as conn, conn:
+            conn.execute("DELETE FROM transcript_segments WHERE video_id = ?", (video_id,))
+            conn.executemany(
+                "INSERT INTO transcript_segments (id, video_id, start_seconds, end_seconds, text, confidence) "
+                "VALUES (:id, :video_id, :start_seconds, :end_seconds, :text, :confidence)",
+                [
+                    {
+                        "id": seg.id, "video_id": seg.video_id, "start_seconds": seg.start_seconds,
+                        "end_seconds": seg.end_seconds, "text": seg.text, "confidence": seg.confidence,
+                    }
+                    for seg in segments
+                ],
+            )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot write transcript segments for video '{video_id}' to {db_path}: {exc}") from exc

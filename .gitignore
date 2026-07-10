@@ -11,3 +11,8 @@ htmlcov/
 .DS_Store
 *.swp
 *~
+
+# Scratch directories created by manual/ad-hoc verification (this project's
+# own code, e.g. real ffmpeg/faster-whisper runs), never meant to be committed.
+manual-review-*/
+review-pytest-*/

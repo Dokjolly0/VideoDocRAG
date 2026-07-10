@@ -1409,11 +1409,17 @@ La trascrizione serve a convertire il parlato in testo con timestamp.
 
 Strumenti consigliati:
 
-- faster-whisper;
+- faster-whisper (attualmente l'unico implementato — vedi comando dedicato sotto);
 - whisper.cpp;
 - Whisper locale.
 
-Output atteso:
+Comando dedicato:
+
+```bash
+videodoc transcribe <project_name>
+```
+
+Output atteso (illustrativo):
 
 ```json
 [
@@ -1426,6 +1432,8 @@ Output atteso:
 ```
 
 La trascrizione deve essere conservata in formato JSON, non solo TXT, perché i timestamp sono fondamentali.
+
+Nota implementativa: lo schema realmente prodotto usa `start_seconds`/`end_seconds` (coerenti con lo schema SQL di `transcript_segments`, §31), non `start`/`end`, e ogni segmento include anche un `id` univoco nel progetto (`<video_id>_seg_NNNN`) e una `confidence`; il file JSON completo include inoltre `video_id`, `engine`, `model` e `language`. Salvato in `workdir/<video_id>/transcript/<video_id>.json` e registrato anche nella tabella `transcript_segments` di `project.db`.
 
 ---
 
