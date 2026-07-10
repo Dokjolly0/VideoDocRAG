@@ -56,12 +56,21 @@ def test_ensure_sources_yaml_does_not_overwrite_existing(tmp_path):
 
 def test_default_excludes_matches_readme():
     assert DEFAULT_EXCLUDES == (
-        ".git/", ".hg/", ".svn/", "node_modules/", "__pycache__/", ".pytest_cache/",
-        ".mypy_cache/", ".ruff_cache/", ".venv/", "venv/", "env/", "dist/", "build/",
-        "out/", "target/", "coverage/", ".next/", ".nuxt/", ".cache/", ".parcel-cache/",
-        ".turbo/", ".vite/", ".DS_Store",
+        ".git/", ".hg/", ".svn/",
+        "node_modules/", "dist/", "build/", "out/", "coverage/", ".next/", ".nuxt/",
+        ".cache/", ".parcel-cache/", ".turbo/", ".vite/",
+        "__pycache__/", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/", ".venv/",
+        "venv/", "env/", ".tox/",
+        "bin/", "obj/",
+        "target/", ".gradle/",
+        "vendor/",
+        ".dart_tool/",
+        "Pods/", "DerivedData/",
+        ".idea/", ".vscode/", ".vs/", ".settings/",
+        ".DS_Store",
     )
-    assert len(DEFAULT_EXCLUDES) == 23
+    assert len(DEFAULT_EXCLUDES) == 35
+    assert "packages/" not in DEFAULT_EXCLUDES  # deliberate: real source dir name in JS monorepos
 
 
 def test_resolve_excludes_default_only():
@@ -140,6 +149,39 @@ def test_scan_codebase_prunes_node_modules(tmp_path):
     codebase = tmp_path / "codebase"
     (codebase / "node_modules" / "pkg").mkdir(parents=True)
     (codebase / "node_modules" / "pkg" / "index.js").write_text("x", encoding="utf-8")
+    (codebase / "src").mkdir()
+    (codebase / "src" / "app.py").write_text("x", encoding="utf-8")
+
+    result = scan_codebase(codebase, ScanSection())
+    assert result == [codebase / "src" / "app.py"]
+
+
+def test_scan_codebase_prunes_dotnet_build_output(tmp_path):
+    """Regression test: a real .NET codebase (e.g. one scanned manually
+    during Step 2 testing) has bin/obj build output and .vs/ IDE state
+    scattered across every project subfolder, not just at the root -- these
+    must be pruned like node_modules/, or a scan reports thousands of
+    build-artifact files as if they were source."""
+    codebase = tmp_path / "codebase"
+    (codebase / "MyProj" / "bin" / "Debug").mkdir(parents=True)
+    (codebase / "MyProj" / "bin" / "Debug" / "assets.json").write_text("x", encoding="utf-8")
+    (codebase / "MyProj" / "obj" / "Debug").mkdir(parents=True)
+    (codebase / "MyProj" / "obj" / "Debug" / "project.assets.json").write_text("x", encoding="utf-8")
+    (codebase / ".vs" / "MyProj").mkdir(parents=True)
+    (codebase / ".vs" / "MyProj" / "state.json").write_text("x", encoding="utf-8")
+
+    result = scan_codebase(codebase, ScanSection())
+    assert result == []
+
+
+@pytest.mark.parametrize(
+    "dirname",
+    [".idea", ".vscode", ".settings", ".gradle", ".tox", "vendor", "Pods", "DerivedData", ".dart_tool"],
+)
+def test_scan_codebase_prunes_multi_language_build_and_ide_dirs(tmp_path, dirname):
+    codebase = tmp_path / "codebase"
+    (codebase / dirname / "nested").mkdir(parents=True)
+    (codebase / dirname / "nested" / "state.json").write_text("x", encoding="utf-8")
     (codebase / "src").mkdir()
     (codebase / "src" / "app.py").write_text("x", encoding="utf-8")
 

@@ -720,24 +720,19 @@ projects/corso-avanzato/
 
 La scansione del progetto deve essere configurabile. Di default il sistema deve ignorare directory tecniche o non pertinenti, per evitare di indicizzare file generati, cache, dipendenze esterne o artefatti di build.
 
-Esclusioni predefinite consigliate:
+Esclusioni predefinite consigliate (raggruppate per ecosistema — l'elenco completo, con il ragionamento su ogni voce, vive in `core/storage/filesystem.py::DEFAULT_EXCLUDES`):
 
 ```text
+# VCS
 .git/
 .hg/
 .svn/
+
+# JS/TS/Node
 node_modules/
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.venv/
-venv/
-env/
 dist/
 build/
 out/
-target/
 coverage/
 .next/
 .nuxt/
@@ -745,8 +740,45 @@ coverage/
 .parcel-cache/
 .turbo/
 .vite/
+
+# Python
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+.tox/
+
+# .NET / C#
+bin/
+obj/
+
+# JVM (Java/Kotlin/Scala)
+target/
+.gradle/
+
+# Go / PHP (dipendenze esterne vendorizzate)
+vendor/
+
+# Dart/Flutter
+.dart_tool/
+
+# iOS/Swift
+Pods/
+DerivedData/
+
+# IDE/editor
+.idea/
+.vscode/
+.vs/
+.settings/
+
 .DS_Store
 ```
+
+Nota: le esclusioni per nome di cartella sono un match esatto sul nome del componente, non un pattern glob — una cartella di build con suffisso variabile (es. `cmake-build-<tipo>/` di CMake, `*.egg-info/` di Python) non è coperta. `packages/` non è nella lista predefinita nonostante sia un artefatto storico di NuGet: è anche il nome di cartella sorgente standard nei monorepo JS/TS (workspace Yarn/npm/pnpm, Lerna, Turborepo, Nx) — escluderla di default rischierebbe di nascondere codice reale, non solo rumore di build.
 
 Le esclusioni devono essere modificabili tramite configurazione, permettendo sia di aggiungere nuove regole sia di rimuovere una regola predefinita quando una cartella normalmente ignorata è invece rilevante per il corso.
 

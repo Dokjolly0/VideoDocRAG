@@ -15,11 +15,39 @@ PROJECT_SUBDIRS = ("videos", "attachments", "codebase", "workdir", "indexes", "s
 # README §8.3 -- entries ending in "/" are directory names (matched by exact
 # component name at any depth); entries without "/" are file patterns
 # (fnmatch, so plain names like ".DS_Store" and globs like "*.min.js" both work).
+#
+# Directory names are matched exactly, not via fnmatch -- a build directory
+# with a variable suffix (CMake's "cmake-build-<type>/", Python's
+# "*.egg-info/") is NOT covered by this list and would need glob-capable
+# directory matching, which this scanner does not implement.
+#
+# "packages/" is deliberately NOT in this list even though it is a legacy
+# NuGet artifact folder: it is also the standard *source* directory name in
+# JS/TS monorepos (Yarn/npm/pnpm workspaces, Lerna, Turborepo, Nx) -- unlike
+# every entry below, excluding it by default would risk silently hiding real
+# user-authored code, not just build noise.
 DEFAULT_EXCLUDES: tuple[str, ...] = (
-    ".git/", ".hg/", ".svn/", "node_modules/", "__pycache__/", ".pytest_cache/",
-    ".mypy_cache/", ".ruff_cache/", ".venv/", "venv/", "env/", "dist/", "build/",
-    "out/", "target/", "coverage/", ".next/", ".nuxt/", ".cache/", ".parcel-cache/",
-    ".turbo/", ".vite/", ".DS_Store",
+    # VCS
+    ".git/", ".hg/", ".svn/",
+    # JS/TS/Node
+    "node_modules/", "dist/", "build/", "out/", "coverage/", ".next/", ".nuxt/",
+    ".cache/", ".parcel-cache/", ".turbo/", ".vite/",
+    # Python
+    "__pycache__/", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/", ".venv/",
+    "venv/", "env/", ".tox/",
+    # .NET / C#
+    "bin/", "obj/",
+    # JVM (Java/Kotlin/Scala -- Maven and Gradle both land in "target/"/"build/", "build/" already listed above)
+    "target/", ".gradle/",
+    # Go / PHP (vendored third-party dependencies, same rationale as node_modules/)
+    "vendor/",
+    # Dart/Flutter
+    ".dart_tool/",
+    # iOS/Swift
+    "Pods/", "DerivedData/",
+    # IDE/editor state
+    ".idea/", ".vscode/", ".vs/", ".settings/",
+    ".DS_Store",
 )
 
 
