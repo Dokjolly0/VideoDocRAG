@@ -1,11 +1,13 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni). Le fasi successive della pipeline (ingestion, trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni) su **Windows, Linux o macOS**. Le fasi successive della pipeline (ingestion, trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+
+Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
 ## Indice
 
 1. [Prerequisiti](#1-prerequisiti)
-2. [Nota importante: quale Python usare (Windows)](#2-nota-importante-quale-python-usare-windows)
+2. [Nota importante: quale Python usare](#2-nota-importante-quale-python-usare)
 3. [Setup iniziale dell'ambiente](#3-setup-iniziale-dellambiente)
 4. [Attivare l'ambiente nelle sessioni successive](#4-attivare-lambiente-nelle-sessioni-successive)
 5. [Comandi disponibili](#5-comandi-disponibili)
@@ -18,13 +20,15 @@ Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (S
 
 ## 1. Prerequisiti
 
-- Windows con PowerShell (le istruzioni sotto usano la sintassi PowerShell).
+- Windows, Linux o macOS, con un terminale (PowerShell su Windows; bash/zsh su Linux/macOS).
 - Python 3.11 o superiore.
-- Nessuna altra dipendenza esterna richiesta in questo step (niente Ollama, FFmpeg, Qdrant: servono solo dalle fasi successive della pipeline).
+- Nessuna altra dipendenza esterna richiesta in questi step (niente Ollama, FFmpeg, Qdrant: servono solo dalle fasi successive della pipeline).
 
-## 2. Nota importante: quale Python usare (Windows)
+## 2. Nota importante: quale Python usare
 
-Su Windows, digitare `python` può risolvere a build diverse. **Evita la build "Microsoft Store"** di Python (quella installata dal Microsoft Store, tipicamente con percorso tipo `...\AppData\Local\Microsoft\WindowsApps\python.exe` o `...\Packages\PythonSoftwareFoundation.Python.3.13_...`): Windows applica a queste build una virtualizzazione del filesystem che reindirizza silenziosamente le scritture sotto `%LOCALAPPDATA%` in una cartella privata del pacchetto, invisibile a PowerShell, Esplora File o altri programmi. VideoDocRAG scrive proprio lì il registro locale dei progetti (vedi §6), quindi con la build Store rischi di non trovare più i file che il programma dice di aver creato.
+### Windows
+
+Digitare `python` può risolvere a build diverse. **Evita la build "Microsoft Store"** di Python (quella installata dal Microsoft Store, tipicamente con percorso tipo `...\AppData\Local\Microsoft\WindowsApps\python.exe` o `...\Packages\PythonSoftwareFoundation.Python.3.13_...`): Windows applica a queste build una virtualizzazione del filesystem che reindirizza silenziosamente le scritture sotto `%LOCALAPPDATA%` in una cartella privata del pacchetto, invisibile a PowerShell, Esplora File o altri programmi. VideoDocRAG scrive proprio lì il registro locale dei progetti (vedi §6), quindi con la build Store rischi di non trovare più i file che il programma dice di aver creato.
 
 Verifica quale Python useresti:
 
@@ -41,9 +45,20 @@ winget install Python.Python.3.13
 
 e usa il suo percorso esplicito (es. `C:\Users\<utente>\AppData\Local\Programs\Python\Python313\python.exe`) per creare il virtual environment al passo successivo, anche se non è la prima voce in `PATH`.
 
+### Linux/macOS
+
+Non è nota nessuna virtualizzazione del filesystem paragonabile a quella di Windows Store. Il Python di sistema o quello installato tramite il gestore pacchetti della distribuzione (`apt`, `dnf`, ...) o `pyenv` su Linux, `brew install python@3.13` o `pyenv` su macOS, è normalmente sufficiente — usa semplicemente `python3` (su molte distribuzioni `python` senza suffisso non è garantito puntare a Python 3).
+
+```bash
+python3 --version
+which python3
+```
+
 ## 3. Setup iniziale dell'ambiente
 
-Da eseguire una sola volta (o ogni volta che si vuole un ambiente pulito):
+Da eseguire una sola volta (o ogni volta che si vuole un ambiente pulito).
+
+**Windows (PowerShell):**
 
 ```powershell
 cd D:\Projects\VideoDocRAG
@@ -56,9 +71,20 @@ python -m pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
-Verifica che l'installazione sia andata a buon fine:
+**Linux/macOS (bash/zsh):**
 
-```powershell
+```bash
+cd ~/Projects/VideoDocRAG
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+Verifica che l'installazione sia andata a buon fine (identico su tutti gli OS, venv attivo):
+
+```bash
 videodoc --help
 ```
 
@@ -83,42 +109,65 @@ Usage: videodoc [OPTIONS] COMMAND [ARGS]...
 
 Non serve rifare il setup ogni volta: in una nuova finestra di terminale basta riattivare il venv già creato.
 
+**Windows (PowerShell):**
+
 ```powershell
 cd D:\Projects\VideoDocRAG
 .venv\Scripts\Activate.ps1
 ```
 
-Per uscire dal virtual environment a fine sessione:
+**Linux/macOS (bash/zsh):**
 
-```powershell
+```bash
+cd ~/Projects/VideoDocRAG
+source .venv/bin/activate
+```
+
+Per uscire dal virtual environment a fine sessione (identico ovunque):
+
+```bash
 deactivate
 ```
 
 ## 5. Comandi disponibili
 
+I comandi `videodoc ...` sono identici su tutti gli OS (Python multipiattaforma) — solo i percorsi passati come argomento cambiano sintassi. Gli esempi sotto mostrano entrambe le forme dove rilevante.
+
 ### 5.1 Creare un nuovo progetto
 
 Nel percorso di default (fuori dalla cartella del programma, vedi README §8.1.2):
 
-```powershell
+```bash
 videodoc init corso-software-x
 ```
 
 ```text
-Project 'corso-software-x' initialized at C:\Users\<utente>\VideoDocRAG\projects\corso-software-x
+Project 'corso-software-x' initialized at <home>/VideoDocRAG/projects/corso-software-x
 Registered as 'corso-software-x' in the local project registry.
 ```
 
-In un percorso a scelta (es. un'altra unità, una cartella condivisa, una chiavetta):
+In un percorso a scelta:
 
 ```powershell
+# Windows
 videodoc init corso-software-x --path "D:\Corsi\corso-software-x"
 ```
 
-**Video (o allegati, o codebase) già presenti altrove sul disco**: non serve copiarli dentro il progetto. `--videos`/`--attachments`/`--codebase` impostano un percorso esterno, referenziato non copiato (stesso principio dei "media collegati" di un editor video):
+```bash
+# Linux/macOS
+videodoc init corso-software-x --path "/home/utente/Corsi/corso-software-x"
+```
+
+**Video (o allegati, o codebase) già presenti altrove sul disco**: non serve copiarli dentro il progetto. `--videos`/`--attachments`/`--codebase` impostano un percorso esterno, referenziato non copiato (stesso principio dei "media collegati" di un editor video). Un valore assoluto è sempre nella sintassi nativa dell'OS che eseguirà VideoDocRAG — un percorso assoluto è per natura un dato specifico della macchina, non è richiesta né garantita portabilità dello stesso valore tra OS diversi:
 
 ```powershell
+# Windows
 videodoc init corso-software-x --videos "D:\Corsi\Registrazioni"
+```
+
+```bash
+# Linux/macOS
+videodoc init corso-software-x --videos "/mnt/corsi/registrazioni"
 ```
 
 Questi tre flag hanno effetto **solo alla prima creazione** del progetto: se rilanciati su un progetto già esistente vengono ignorati con un avviso esplicito (`config.yaml` non viene mai sovrascritto), non silenziosamente scartati:
@@ -132,7 +181,7 @@ Un progetto con sorgenti esterne non è più interamente autocontenuto: spostare
 
 Rilanciare `init` sullo stesso progetto è sicuro: non sovrascrive un `config.yaml` già esistente, riporta solo lo stato ("already initialized").
 
-Struttura creata:
+Struttura creata (identica su tutti gli OS):
 
 ```text
 corso-software-x/
@@ -149,7 +198,7 @@ corso-software-x/
 
 ### 5.2 Elencare i progetti registrati
 
-```powershell
+```bash
 videodoc list
 ```
 
@@ -157,7 +206,7 @@ videodoc list
 +-----------------------------------------------------------------------------+
 | Name              | Path                              | Created at         |
 |-------------------+------------------------------------+--------------------|
-| corso-software-x  | D:\Corsi\corso-software-x          | 2026-07-09T14:00:25 |
+| corso-software-x  | /home/utente/Corsi/corso-software-x | 2026-07-09T14:00:25 |
 +-----------------------------------------------------------------------------+
 ```
 
@@ -168,35 +217,42 @@ Se non ci sono progetti registrati, il comando lo dice esplicitamente e suggeris
 Utile per script o per navigare rapidamente:
 
 ```powershell
+# Windows
 videodoc path corso-software-x
 cd (videodoc path corso-software-x)
+```
+
+```bash
+# Linux/macOS
+videodoc path corso-software-x
+cd "$(videodoc path corso-software-x)"
 ```
 
 ### 5.4 Registrare un progetto esistente (creato o spostato a mano)
 
 Se una cartella progetto (con un `config.yaml` valido) esiste già ma non è nel registro locale — per esempio dopo averla spostata, copiata da un altro PC, o clonata da un backup:
 
-```powershell
-videodoc link "D:\Corsi\corso-software-x"
+```bash
+videodoc link "/home/utente/Corsi/corso-software-x"
 ```
 
 `--name` registra il progetto sotto un **alias locale esplicito**, diverso dallo slug canonico presente nel suo `config.yaml` — utile per risolvere una collisione locale tra due progetti il cui slug coincide per caso, o per usare un nickname più corto. Non modifica mai il `config.yaml` del progetto: l'identità "vera" resta quella scritta lì. L'alias viene comunque normalizzato con le stesse regole dello slug (niente spazi/maiuscole/punteggiatura nel registro), e il comando lo segnala esplicitamente in output quando differisce dallo slug reale:
 
-```powershell
-videodoc link "D:\Corsi\corso-software-x" --name "Alias Locale!!"
-# Linked as alias 'alias-locale' -> D:\Corsi\corso-software-x (the project's own slug is 'corso-software-x')
+```bash
+videodoc link "/home/utente/Corsi/corso-software-x" --name "Alias Locale!!"
+# Linked as alias 'alias-locale' -> /home/utente/Corsi/corso-software-x (the project's own slug is 'corso-software-x')
 ```
 
 Se invece non lo differenzi mai, il comando registra semplicemente con lo slug canonico e lo dice senza menzionare alcun alias:
 
-```powershell
-videodoc link "D:\Corsi\corso-software-x"
-# Linked 'corso-software-x' -> D:\Corsi\corso-software-x
+```bash
+videodoc link "/home/utente/Corsi/corso-software-x"
+# Linked 'corso-software-x' -> /home/utente/Corsi/corso-software-x
 ```
 
 ### 5.5 Rimuovere un progetto dal registro (senza cancellare i file)
 
-```powershell
+```bash
 videodoc unlink corso-software-x
 ```
 
@@ -206,7 +262,7 @@ Questo comando **non cancella mai i file del progetto**: agisce solo sul registr
 
 Enumera video, allegati e codebase (interni o esterni) e scrive `sources.yaml`:
 
-```powershell
+```bash
 videodoc scan corso-software-x
 ```
 
@@ -223,13 +279,13 @@ Sources manifest updated: sources.yaml
 Se una sorgente è esterna, viene segnalata esplicitamente:
 
 ```text
-Videos: 8 found (external: D:\Corsi\Registrazioni)
+Videos: 8 found (external: /mnt/corsi/registrazioni)
 ```
 
-Zero video trovati **non** fa fallire il comando (`exit code` resta `0`): sarà una fase successiva (ingestion) a rifiutarsi di procedere senza video, non lo scan. Allo stesso modo, una sorgente esterna mancante (es. un'unità scollegata) o che punta a un file invece che a una cartella produce solo un avviso, mai un crash:
+Zero video trovati **non** fa fallire il comando (`exit code` resta `0`): sarà una fase successiva (ingestion) a rifiutarsi di procedere senza video, non lo scan. Allo stesso modo, una sorgente esterna mancante (es. un'unità scollegata, o un mount point non montato su Linux/macOS) o che punta a un file invece che a una cartella produce solo un avviso, mai un crash:
 
 ```text
-Warning: external videos path not found: Z:\NonEsiste\Videos
+Warning: external videos path not found: /mnt/corsi/registrazioni
 ```
 
 Le esclusioni si basano sulla sezione `scan:` di `config.yaml` (default già ragionevoli — `.git/`, `node_modules/`, `__pycache__/`, ecc. — personalizzabili con `add_excludes`/`remove_excludes`, vedi README §8.3). `sources.yaml` viene **sempre rigenerato per intero** a ogni scan, mai preservato: rilanciarlo dopo aver aggiunto un video aggiorna semplicemente il manifest.
@@ -240,10 +296,12 @@ Due variabili d'ambiente permettono di controllare dove VideoDocRAG legge/scrive
 
 | Variabile | Effetto | Default se non impostata |
 |---|---|---|
-| `VIDEODOC_HOME` | Cartella in cui `init` crea i progetti quando non si usa `--path` | `%USERPROFILE%\VideoDocRAG\projects` |
-| `VIDEODOC_DATA_DIR` | Cartella in cui vive il registro locale (`registry.json`) | Cartella dati dell'applicazione via `platformdirs` (tipicamente `%LOCALAPPDATA%\videodoc`) |
+| `VIDEODOC_HOME` | Cartella in cui `init` crea i progetti quando non si usa `--path` | `%USERPROFILE%\VideoDocRAG\projects` (Windows) / `~/VideoDocRAG/projects` (Linux/macOS) |
+| `VIDEODOC_DATA_DIR` | Cartella in cui vive il registro locale (`registry.json`) | Cartella dati dell'applicazione via `platformdirs`: `%LOCALAPPDATA%\videodoc` (Windows), `~/.local/share/videodoc` (Linux), `~/Library/Application Support/videodoc` (macOS) |
 
 Esempio, per lavorare in una sandbox completamente separata dal proprio profilo utente reale:
+
+**Windows (PowerShell):**
 
 ```powershell
 $env:VIDEODOC_HOME = "D:\Sandbox\VideoDocRAG\home"
@@ -252,14 +310,34 @@ $env:VIDEODOC_DATA_DIR = "D:\Sandbox\VideoDocRAG\appdata"
 videodoc init progetto-di-prova
 ```
 
-Le variabili valgono solo per la sessione di terminale corrente. Per rimuoverle:
+Per rimuoverle:
 
 ```powershell
 Remove-Item Env:\VIDEODOC_HOME
 Remove-Item Env:\VIDEODOC_DATA_DIR
 ```
 
+**Linux/macOS (bash/zsh):**
+
+```bash
+export VIDEODOC_HOME="/tmp/videodoc-sandbox/home"
+export VIDEODOC_DATA_DIR="/tmp/videodoc-sandbox/appdata"
+
+videodoc init progetto-di-prova
+```
+
+Per rimuoverle:
+
+```bash
+unset VIDEODOC_HOME
+unset VIDEODOC_DATA_DIR
+```
+
+Le variabili valgono solo per la sessione di terminale corrente.
+
 ## 7. Eseguire i test
+
+**Windows (PowerShell):**
 
 ```powershell
 cd D:\Projects\VideoDocRAG
@@ -269,21 +347,33 @@ pip install -e ".[dev]"   # se non già fatto
 pytest
 ```
 
-Con report di copertura:
+**Linux/macOS (bash/zsh):**
 
-```powershell
+```bash
+cd ~/Projects/VideoDocRAG
+source .venv/bin/activate
+pip install -e ".[dev]"   # se non già fatto
+
+pytest
+```
+
+Con report di copertura (identico ovunque, venv attivo):
+
+```bash
 pytest --cov=src/videodoc --cov-report=term-missing
 ```
 
-I test sono isolati automaticamente (vedi `tests/conftest.py`): non toccano mai il vero `%LOCALAPPDATA%` né la vera home utente, indipendentemente da come è configurato l'ambiente in cui vengono lanciati.
+I test sono isolati automaticamente (vedi `tests/conftest.py`): non toccano mai la vera cartella dati dell'applicazione né la vera home utente, indipendentemente da come è configurato l'ambiente in cui vengono lanciati.
+
+VideoDocRAG viene anche testato automaticamente su Windows, Linux e macOS a ogni push tramite GitHub Actions (`.github/workflows/tests.yml`) — la verifica multipiattaforma reale non dipende solo da questa macchina di sviluppo.
 
 ## 8. Risoluzione problemi
 
 **`videodoc` non è riconosciuto come comando.**
-Il virtual environment non è attivo. Esegui `.venv\Scripts\Activate.ps1` dalla root del progetto (§4). Se il problema persiste, verifica che `pip install -e ".[dev]"` sia andato a buon fine senza errori.
+Il virtual environment non è attivo. Riattivalo (§4). Se il problema persiste, verifica che `pip install -e ".[dev]"` sia andato a buon fine senza errori.
 
-**Ho creato/rilanciato un progetto ma non trovo i file dove me li aspetto.**
-Probabilmente stai usando la build Microsoft Store di Python — vedi §2. Verifica con `where python` e ricrea il venv con l'interprete ufficiale.
+**(Solo Windows) Ho creato/rilanciato un progetto ma non trovo i file dove me li aspetto.**
+Probabilmente stai usando la build Microsoft Store di Python — vedi §2. Verifica con `where python` e ricrea il venv con l'interprete ufficiale. Non è un problema noto su Linux/macOS.
 
 **`Error: Project '<nome>' is already registered at <percorso>, which differs from the requested path <altro percorso>`.**
 Il nome (in realtà lo slug: `videodoc init "Corso Software X"` viene registrato come `corso-software-x`, mai col nome grezzo) è già registrato su un percorso diverso da quello richiesto. Usa un nome diverso, oppure `videodoc unlink <nome>` seguito da `videodoc link <nuovo percorso>` se vuoi effettivamente spostare la registrazione.
@@ -291,17 +381,17 @@ Il nome (in realtà lo slug: `videodoc init "Corso Software X"` viene registrato
 **`Error: <percorso> already contains a different project ('<slug>', named '<nome>'). Refusing to re-initialize it as '<altro-slug>'...`.**
 Hai lanciato `videodoc init <nome> --path <percorso>` su una cartella che contiene già un `config.yaml` valido di un *altro* progetto. Per evitare di creare un alias fuorviante (la stessa cartella registrata sotto due nomi diversi), l'init si rifiuta e non tocca il `config.yaml` esistente. Se il tuo intento era registrare quel progetto esistente con il suo nome reale, usa `videodoc link <percorso>` invece di `init`.
 
-**`Error: Invalid configuration in <percorso>\config.yaml: ...`.**
+**`Error: Invalid configuration in <percorso>/config.yaml: ...`.**
 Il file `config.yaml` è stato modificato a mano con un valore fuori dai limiti consentiti o una chiave sconosciuta (lo schema è validato in modo rigoroso — chiavi non previste vengono rifiutate, non ignorate silenziosamente). Il messaggio d'errore indica il campo esatto e il vincolo violato.
 
 **Il registro locale sembra "resettato" dopo un errore.**
 Se `registry.json` risultava corrotto (JSON non valido o struttura inattesa), viene automaticamente rinominato in `registry.json.corrupted-<timestamp>` nella stessa cartella e si riparte da un registro vuoto, senza bloccare il comando. Controlla quella cartella (§6, `VIDEODOC_DATA_DIR`) se pensi di aver perso delle registrazioni: i progetti non vengono mai cancellati dal disco, puoi sempre ri-registrarli con `videodoc link <percorso>`.
 
 **`Error: paths.videos must be either a clean relative path ... or a fully absolute path ...`.**
-Il valore passato a `--videos`/`--attachments`/`--codebase` (o scritto a mano in `config.yaml`) è una forma Windows ambigua tipo `C:foo` (relativa alla cartella corrente sul drive C:) o `\foo`/`/foo` (relativa alla radice del drive corrente) — nessuna delle due è né un percorso relativo pulito al progetto né un percorso assoluto esplicito. Usa un percorso completo (`D:\Corsi\Workshop`) o un nome relativo semplice (`videos`).
+Il valore passato a `--videos`/`--attachments`/`--codebase` (o scritto a mano in `config.yaml`) è una forma ambigua specifica delle regole di path dell'OS in uso — su Windows, ad esempio, `C:foo` (relativo alla cartella corrente sul drive C:) o `\foo`/`/foo` (relativo alla radice del drive corrente): nessuna delle due è né un percorso relativo pulito al progetto né un percorso assoluto esplicito. Su Linux/macOS questa categoria di ambiguità non esiste (le regole POSIX non hanno un concetto equivalente). Usa un percorso assoluto completo (`D:\Corsi\Workshop` su Windows, `/mnt/corsi/workshop` su Linux/macOS) o un nome relativo semplice (`videos`).
 
 **`Error: ... must not contain '..' path segments ...`.**
-Un valore relativo tipo `../altrove` o `sub/../../altrove` per `workdir`/`indexes`/`output`/`database`/`--videos`/`--attachments`/`--codebase` verrebbe risolto uscendo dalla cartella del progetto una volta unito al suo percorso — non è ammesso. Se l'intento è davvero riferirsi a una cartella esterna, usa un percorso assoluto esplicito (`D:\Corsi\Workshop`); per `workdir`/`indexes`/`output`/`database` non è mai ammesso un riferimento esterno (devono restare dentro il progetto, vedi §5.1).
+Un valore relativo tipo `../altrove` o `sub/../../altrove` per `workdir`/`indexes`/`output`/`database`/`--videos`/`--attachments`/`--codebase` verrebbe risolto uscendo dalla cartella del progetto una volta unito al suo percorso — non è ammesso. Se l'intento è davvero riferirsi a una cartella esterna, usa un percorso assoluto esplicito; per `workdir`/`indexes`/`output`/`database` non è mai ammesso un riferimento esterno (devono restare dentro il progetto, vedi §5.1).
 
 **`scan` riporta "Videos: 0 found" ma i video ci sono.**
 Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.allowed_video_extensions`, default `.mp4 .mkv .mov .avi .webm .m4v .wmv`) e che, se hai configurato un percorso esterno, quel percorso esista davvero e sia una cartella (non un file) — `scan` lo segnala con un `Warning` esplicito in entrambi i casi di problema.

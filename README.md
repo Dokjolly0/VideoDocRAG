@@ -609,7 +609,13 @@ Se `--path` non viene specificato, il progetto viene creato nella cartella di de
 
 ### Registro locale
 
-Poiché i progetti possono trovarsi in posizioni arbitrarie, il sistema mantiene un piccolo registro locale che associa il nome di ogni progetto al suo percorso reale. Il registro non fa parte né del programma né di un singolo progetto: vive in una cartella dati dell'applicazione, per esempio `%LOCALAPPDATA%\VideoDocRAG\registry.json` su Windows o `~/.local/share/videodoc/registry.json` su Linux/macOS.
+Poiché i progetti possono trovarsi in posizioni arbitrarie, il sistema mantiene un piccolo registro locale che associa il nome di ogni progetto al suo percorso reale. Il registro non fa parte né del programma né di un singolo progetto: vive in una cartella dati dell'applicazione (via `platformdirs`, già cross-platform per costruzione):
+
+```text
+Windows:  %LOCALAPPDATA%\videodoc\registry.json
+Linux:    ~/.local/share/videodoc/registry.json
+macOS:    ~/Library/Application Support/videodoc/registry.json
+```
 
 Esempio di contenuto:
 
@@ -675,6 +681,8 @@ Regole operative:
 - se è presente anche `codebase/`, il RAG deve sincronizzare e indicizzare la codebase oltre a video, audio e allegati;
 - ogni snippet derivato dalla codebase deve mantenere il riferimento al file sorgente, al percorso relativo, al linguaggio e, quando possibile, all’intervallo di righe;
 - quando un frammento di codice compare sia nel video sia nella codebase, la codebase ha priorità per il contenuto esatto, mentre il video resta la fonte del contesto operativo e dei timestamp.
+
+`videos/`, `attachments/` e `codebase/` non devono necessariamente stare fisicamente dentro il progetto: `config.yaml` (`paths.videos`/`attachments`/`codebase`) accetta anche un percorso assoluto, che viene referenziato al posto suo invece di richiedere una copia (vedi §14, opzioni `--videos`/`--attachments`/`--codebase` di `videodoc init`). Il valore assoluto va scritto nella sintassi nativa del sistema operativo che eseguirà VideoDocRAG (`D:\Corsi\Workshop` su Windows, `/mnt/corsi/workshop` su Linux/macOS) — un percorso assoluto è per natura un dato specifico della macchina, non è richiesta né garantita la portabilità dello stesso valore tra sistemi operativi diversi.
 
 Esempio di progetto minimo:
 

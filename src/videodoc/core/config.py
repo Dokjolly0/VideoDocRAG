@@ -32,24 +32,29 @@ class PathsSection(BaseModel):
     @classmethod
     def _must_stay_inside_project(cls, v: str, info: ValidationInfo) -> str:
         # has_any_anchor (core/utils/paths.py), non un semplice
-        # Path(v).is_absolute(): quest'ultimo da solo rifiuterebbe "C:\foo" ma
-        # lascerebbe passare "C:foo" (drive-relative: "cartella corrente sul
-        # drive C:") e "\foo" (root-relative: "radice del drive corrente") --
-        # forme che pathlib NON considera absolute ma che, una volta unite a
-        # project_dir con l'operatore /, possono comunque scavalcarlo
-        # silenziosamente. has_any_anchor è la stessa identica funzione usata
-        # dal validator di videos/attachments/codebase sotto e da
+        # Path(v).is_absolute(): su Windows quest'ultimo da solo
+        # rifiuterebbe "C:\foo" ma lascerebbe passare "C:foo" (drive-relative:
+        # "cartella corrente sul drive C:") e "\foo" (root-relative: "radice del
+        # drive corrente") -- forme che pathlib NON considera absolute ma che,
+        # una volta unite a project_dir con l'operatore /, possono comunque
+        # scavalcarlo silenziosamente (su POSIX questa ambiguità non esiste
+        # affatto, e has_any_anchor si comporta semplicemente come
+        # is_absolute() lì -- vedi core/utils/paths.py). has_any_anchor è la
+        # stessa identica funzione usata dal validator di
+        # videos/attachments/codebase sotto e da
         # resolve_source_path()/SourceScanService -- un'unica definizione
         # condivisa, non tre implementazioni indipendenti che potrebbero
-        # divergere (vedi core/utils/paths.py per il perché).
+        # divergere, e che si adatta automaticamente all'OS host (Windows,
+        # Linux o macOS) tramite pathlib.
         if has_any_anchor(v):
             raise ValueError(
                 f"paths.{info.field_name} must be a relative path (resolved against the "
-                f"project folder) -- no drive letter, no leading slash/backslash, including "
-                f"drive-relative ('C:foo') and root-relative ('\\foo') Windows forms, which "
-                f"pathlib does not classify as absolute but which can still escape the project "
-                f"folder when joined with it. Absolute paths are only allowed for paths.videos, "
-                f"paths.attachments and paths.codebase, which may point to external locations. "
+                f"project folder) -- no drive letter, no leading slash, including ambiguous "
+                f"forms specific to the host OS's path rules (e.g. Windows drive-relative "
+                f"'C:foo' or root-relative '\\foo'), which pathlib does not always classify "
+                f"as absolute but which can still escape the project folder when joined with "
+                f"it. Absolute paths are only allowed for paths.videos, paths.attachments and "
+                f"paths.codebase, which may point to external locations. "
                 f"workdir/indexes/output/database must stay physically inside the project folder "
                 f"to preserve per-project data isolation (README §8.1.1). Got: {v!r}"
             )
@@ -72,33 +77,33 @@ class PathsSection(BaseModel):
     @classmethod
     def _no_ambiguous_windows_forms(cls, v: str, info: ValidationInfo) -> str:
         # Questi tre campi accettano SIA relativo pulito SIA assoluto vero (è
-        # il punto della feature: fonti esterne referenziate). Le stesse forme
-        # ambigue rifiutate sopra (drive-relative "C:foo", root-relative
-        # "\foo"/"/foo") restano pericolose anche qui: non scavalcherebbero
-        # project_dir per errore (non vengono mai unite quando "assolute" agli
-        # occhi di pathlib), ma produrrebbero una resolve_source_path() il cui
-        # comportamento dipende dalla directory corrente del processo su quel
-        # drive -- fragile, non riproducibile, né chiaramente "relativo al
-        # progetto" né chiaramente "percorso esterno esplicito". Si rifiutano
-        # solo le forme ambigue: un percorso assoluto vero resta valido.
+        # il punto della feature: fonti esterne referenziate, su Windows,
+        # Linux o macOS -- vedi core/utils/paths.py). Le stesse forme ambigue
+        # rifiutate sopra (su Windows: drive-relative "C:foo", root-relative
+        # "\foo"/"/foo"; su POSIX questa categoria è strutturalmente vuota)
+        # restano pericolose anche qui: non scavalcherebbero project_dir per
+        # errore (non vengono mai unite quando "assolute" agli occhi di
+        # pathlib), ma produrrebbero una resolve_source_path() il cui
+        # comportamento dipende da stato mutabile del processo/dell'host --
+        # fragile, non riproducibile, né chiaramente "relativo al progetto"
+        # né chiaramente "percorso esterno esplicito". Si rifiutano solo le
+        # forme ambigue: un percorso assoluto vero resta valido.
         #
         # has_ambiguous_anchor/is_external_source_path (core/utils/paths.py)
-        # usano PureWindowsPath, mai il Path platform-dependent: sono le
-        # stesse identiche funzioni usate da resolve_source_path() e
-        # SourceScanService per risolvere/classificare questi path a runtime
-        # -- prima di questa condivisione, la validazione usava
-        # PureWindowsPath ma la risoluzione usava Path, che su un ipotetico
-        # host non-Windows avrebbe classificato "D:\Corsi\Workshop" come
-        # relativo invece che come riferimento esterno, contraddicendo
-        # silenziosamente l'esito della validazione.
+        # sono le stesse identiche funzioni usate da resolve_source_path() e
+        # SourceScanService per risolvere/classificare questi path a runtime,
+        # entrambe basate sulla semantica nativa dell'host (PurePath) -- così
+        # "questo path è considerato esterno" non può mai disaccordare tra
+        # validazione e risoluzione, su nessuno dei tre OS supportati.
         if has_ambiguous_anchor(v):
             raise ValueError(
                 f"paths.{info.field_name} must be either a clean relative path (resolved "
                 f"against the project folder) or a fully absolute path pointing to an "
-                f"external source (e.g. 'D:\\Corsi\\Workshop'). Ambiguous Windows forms like "
-                f"drive-relative ('C:foo') or root-relative ('\\foo', '/foo') are rejected: "
-                f"their resolution depends on mutable per-process/per-drive state, not on "
-                f"paths.{info.field_name} alone. Got: {v!r}"
+                f"external source (e.g. 'D:\\Corsi\\Workshop' on Windows, '/mnt/videos' on "
+                f"Linux/macOS). Ambiguous forms specific to the host OS's path rules (e.g. "
+                f"Windows drive-relative 'C:foo' or root-relative '\\foo', '/foo') are "
+                f"rejected: their resolution depends on mutable per-process/per-drive state, "
+                f"not on paths.{info.field_name} alone. Got: {v!r}"
             )
         # Same reasoning as workdir/indexes/output/database: a *relative*
         # value with '..' segments can silently escape project_dir once
@@ -113,8 +118,8 @@ class PathsSection(BaseModel):
                 f"relative -- a relative path like '../outside' can silently escape "
                 f"the project folder once resolved against it. To reference an "
                 f"external source explicitly, use a fully absolute path (e.g. "
-                f"'D:\\Corsi\\Workshop') instead of a relative one that walks upward. "
-                f"Got: {v!r}"
+                f"'D:\\Corsi\\Workshop' on Windows, '/mnt/videos' on Linux/macOS) instead "
+                f"of a relative one that walks upward. Got: {v!r}"
             )
         return v
 
