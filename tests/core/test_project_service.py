@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 import videodoc.core.services.project_service as project_service_module
+from videodoc.core.config import ProjectConfig
 from videodoc.core.errors import (
     InvalidConfigError,
     InvalidProjectNameError,
@@ -89,6 +90,60 @@ def test_init_with_explicit_path_uses_it_directly(tmp_path):
     target = tmp_path / "somewhere-else"
     result = ProjectService.init("demo", path=target, registry=registry)
     assert result.project_dir == target.resolve()
+
+
+def test_init_with_videos_option_sets_external_path_on_new_project(tmp_path):
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    external = tmp_path / "external-videos"
+    result = ProjectService.init("demo", path=tmp_path / "demo", videos=str(external), registry=registry)
+
+    config = ProjectConfig.load(result.config_path)
+    assert config.paths.videos == str(external)
+    assert result.ignored_source_overrides == ()
+
+
+def test_init_rerun_ignores_videos_option_and_flags_it(tmp_path):
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    project_dir = tmp_path / "demo"
+    ProjectService.init("demo", path=project_dir, registry=registry)
+
+    before = ProjectConfig.load(project_dir / "config.yaml")
+
+    result = ProjectService.init("demo", path=project_dir, videos=str(tmp_path / "external"), registry=registry)
+
+    after = ProjectConfig.load(project_dir / "config.yaml")
+    assert after == before
+    assert result.ignored_source_overrides == ("videos",)
+
+
+def test_init_rerun_with_multiple_ignored_overrides(tmp_path):
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    project_dir = tmp_path / "demo"
+    ProjectService.init("demo", path=project_dir, registry=registry)
+
+    result = ProjectService.init(
+        "demo", path=project_dir, registry=registry,
+        videos=str(tmp_path / "v"), attachments=str(tmp_path / "a"), codebase=str(tmp_path / "c"),
+    )
+    assert set(result.ignored_source_overrides) == {"videos", "attachments", "codebase"}
+
+
+def test_init_invalid_videos_option_raises_invalid_config_error(tmp_path):
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    with pytest.raises(InvalidConfigError):
+        ProjectService.init("demo", path=tmp_path / "demo", videos="C:foo", registry=registry)
+
+
+def test_init_invalid_videos_option_creates_nothing_on_disk(tmp_path):
+    """Regression test: config validation must happen before any folder or
+    file is created, so a bad --videos/--attachments/--codebase never leaves
+    partial project state behind."""
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    target = tmp_path / "demo"
+    with pytest.raises(InvalidConfigError):
+        ProjectService.init("demo", path=target, videos="C:foo", registry=registry)
+    assert not target.exists()
+    assert registry.resolve("demo") is None
 
 
 def test_init_is_idempotent_and_keeps_existing_config(tmp_path):

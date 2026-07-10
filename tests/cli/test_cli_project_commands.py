@@ -22,6 +22,34 @@ def test_init_with_custom_path(tmp_path):
     assert (custom / "config.yaml").is_file()
 
 
+def test_init_with_videos_option_end_to_end(tmp_path):
+    custom = tmp_path / "demo"
+    external = tmp_path / "external-videos"
+    result = runner.invoke(app, ["init", "demo", "--path", str(custom), "--videos", str(external)])
+    assert result.exit_code == 0
+    assert str(external) in (custom / "config.yaml").read_text(encoding="utf-8")
+
+
+def test_init_invalid_videos_option_fails_cleanly(tmp_path):
+    custom = tmp_path / "demo"
+    result = runner.invoke(app, ["init", "demo", "--path", str(custom), "--videos", "C:foo"])
+    assert result.exit_code == 1
+    # No unhandled exception (a raw pydantic.ValidationError would show up here
+    # as a genuine crash, not a clean SystemExit(1) from typer.Exit).
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Traceback" not in result.output
+    assert "Error:" in result.output
+    assert "paths.videos" in result.output
+
+
+def test_init_rerun_with_videos_option_prints_warning(tmp_path):
+    custom = tmp_path / "demo"
+    runner.invoke(app, ["init", "demo", "--path", str(custom)])
+    result = runner.invoke(app, ["init", "demo", "--path", str(custom), "--videos", str(tmp_path / "external")])
+    assert result.exit_code == 0
+    assert "ignored" in result.stdout
+
+
 def test_init_registers_by_slug_not_raw_display_name(tmp_path):
     custom = tmp_path / "corso"
     result = runner.invoke(app, ["init", "Corso Software X", "--path", str(custom)])

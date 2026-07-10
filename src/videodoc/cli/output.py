@@ -15,6 +15,11 @@ def print_error(message: str) -> None:
     error_console.print(f"Error: {message}")
 
 
+def print_warning(message: str) -> None:
+    # stdout, not error_console: a warning never changes the exit code.
+    console.print(f"Warning: {message}", style="yellow")
+
+
 def render_projects_table(entries: list[ProjectEntry]) -> None:
     table = Table(show_header=True, header_style="bold")
     table.add_column("Name")

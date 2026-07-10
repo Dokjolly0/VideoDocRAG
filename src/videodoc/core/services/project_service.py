@@ -39,6 +39,10 @@ class ProjectInitResult:
     config_path: Path
     created: bool  # False if config.yaml already existed (idempotent rerun)
     canonical_slug: str  # the project's own identity (config.project.slug); differs from `name` only when aliased
+    ignored_source_overrides: tuple[str, ...] = ()
+    # names of the videos/attachments/codebase kwargs that were requested but
+    # ignored because config.yaml already existed; empty on a fresh init or
+    # when link() builds the result (never requested there).
 
 
 class ProjectService:
@@ -54,6 +58,9 @@ class ProjectService:
         path: Path | None = None,
         registry: ProjectRegistry | None = None,
         language: str = "it",
+        videos: str | None = None,
+        attachments: str | None = None,
+        codebase: str | None = None,
     ) -> ProjectInitResult:
         slug = _safe_slugify(name)
         target_dir = (path if path is not None else default_projects_home() / slug).resolve()
@@ -73,12 +80,15 @@ class ProjectService:
                 f"which differs from the requested path {target_dir}."
             )
 
-        # 2. Folder structure (idempotent).
-        filesystem.ensure_project_structure(target_dir)
-        filesystem.ensure_sources_yaml(target_dir)
-
-        # 3. config.yaml: create only if missing, otherwise validate the existing one.
+        # 2. config.yaml: validate BEFORE touching the filesystem. Checking
+        # config_path.exists() needs no folders to be present (Path.exists()
+        # on a path under a nonexistent parent just returns False), so an
+        # invalid --videos/--attachments/--codebase (or an invalid name/slug)
+        # is caught here without ever creating videos/, sources.yaml, etc. --
+        # matching the fail-fast, no-partial-state rule already applied to
+        # the registry conflict check above.
         config_path = target_dir / "config.yaml"
+        ignored: tuple[str, ...] = ()
         if config_path.exists():
             config = ProjectConfig.load(config_path)  # raises InvalidConfigError if corrupted
             if config.project.slug != slug:
@@ -94,15 +104,31 @@ class ProjectService:
                     f"to register it under its own identity, or choose an empty path."
                 )
             created = False
+            # config.yaml already exists and is never overwritten by a rerun
+            # (same rule already in effect for `language`) -- but any
+            # videos/attachments/codebase override requested here is silently
+            # dropped unless we track it, which would surprise the caller.
+            requested = {"videos": videos, "attachments": attachments, "codebase": codebase}
+            ignored = tuple(k for k, v in requested.items() if v is not None)
         else:
-            config = ProjectConfig.default(name=name, slug=slug, language=language)
-            config.save(config_path)
+            # Raises InvalidConfigError here, before any folder exists, if
+            # videos/attachments/codebase is an invalid value (e.g. "C:foo").
+            config = ProjectConfig.default(
+                name=name, slug=slug, language=language, videos=videos, attachments=attachments, codebase=codebase
+            )
             created = True
+
+        # 3. Folder structure (idempotent) -- safe now that config is known-valid.
+        filesystem.ensure_project_structure(target_dir)
+        filesystem.ensure_sources_yaml(target_dir)
+        if created:
+            config.save(config_path)
 
         # 4. Registration (idempotent by construction of ProjectRegistry.register).
         registry.register(slug, target_dir)
         return ProjectInitResult(
-            name=slug, project_dir=target_dir, config_path=config_path, created=created, canonical_slug=slug
+            name=slug, project_dir=target_dir, config_path=config_path, created=created,
+            canonical_slug=slug, ignored_source_overrides=ignored,
         )
 
     @classmethod

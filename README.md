@@ -997,7 +997,7 @@ La CLI è il modo più semplice per usare e automatizzare il sistema.
 ## 12.1 Comandi consigliati
 
 ```bash
-videodoc init <project_name> [--path <percorso>]
+videodoc init <project_name> [--path <percorso>] [--videos <percorso>] [--attachments <percorso>] [--codebase <percorso>]
 videodoc list
 videodoc link <percorso>
 videodoc unlink <project_name>
@@ -1169,9 +1169,7 @@ corso-software-x/
 
 Il file `config.yaml` contiene le impostazioni principali della pipeline.
 
-Il file `sources.yaml` contiene l’elenco delle fonti da processare.
-
-Esempio:
+Esempio (versione semplificata; lo schema completo è descritto in §30):
 
 ```yaml
 project_name: "Corso Software X"
@@ -1214,6 +1212,32 @@ scan:
   add_excludes: []
   remove_excludes: []
 ```
+
+Il file `sources.yaml` contiene l'elenco delle fonti trovate dall'ultima scansione (`videodoc scan`, vedi §15.1). Viene rigenerato per intero a ogni scansione, mai preservato come `config.yaml`: i percorsi sono sempre assoluti, sia per fonti interne al progetto sia per fonti esterne referenziate.
+
+Esempio:
+
+```yaml
+scanned_at: "2026-07-10T07:39:58.658303Z"
+videos:
+  - "D:/Corsi/corso-software-x/videos/workshop_01_installazione.mp4"
+attachments:
+  - "D:/Corsi/corso-software-x/attachments/slides_intro.pdf"
+codebase:
+  present: true
+  files:
+    - "D:/Corsi/corso-software-x/codebase/src/app/main.py"
+exclusions:
+  directories:
+    - ".git"
+    - "node_modules"
+    - "__pycache__"
+  file_patterns:
+    - ".DS_Store"
+scan_errors: []
+```
+
+`exclusions` riporta sia le cartelle escluse sia i pattern di file esclusi (es. `*.min.js`), non solo le cartelle: serve a poter rispondere a "perché questo file non è stato incluso" indipendentemente dal motivo. `scan_errors` elenca eventuali problemi incontrati durante la scansione (es. una sottocartella non leggibile per permessi): la scansione non si interrompe per questo, ma il problema non resta silenzioso.
 
 ---
 
@@ -1280,10 +1304,13 @@ Output atteso:
 Project: corso-software-x
 Videos: 8 found
 Attachments: 3 found
-Codebase: present
+Codebase: present (42 files)
 Excluded directories: .git, node_modules, __pycache__, dist, build
+Excluded file patterns: .DS_Store
 Sources manifest updated: sources.yaml
 ```
+
+Se una fonte è esterna al progetto (percorso assoluto in `config.yaml`, vedi §8.1.2), viene segnalata esplicitamente, es. `Videos: 8 found (external: D:\Corsi\Registrazioni)`. Una fonte esterna mancante o non trovata non interrompe la scansione: produce un avviso (`Warning: external videos path not found: ...`), non un errore.
 
 Se `codebase/` è presente, il sistema deve sincronizzarla in modo idempotente:
 
@@ -2397,6 +2424,14 @@ scan:
     - ".yaml"
     - ".yml"
     - ".md"
+  allowed_video_extensions:
+    - ".mp4"
+    - ".mkv"
+    - ".mov"
+    - ".avi"
+    - ".webm"
+    - ".m4v"
+    - ".wmv"
 
 documentation:
   format: "markdown"

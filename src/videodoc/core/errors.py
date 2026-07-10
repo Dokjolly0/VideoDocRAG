@@ -10,6 +10,10 @@ class InvalidConfigError(VideoDocError):
     """Raised when a project's config.yaml is missing, malformed, or fails validation."""
 
 
+class InvalidSourceManifestError(VideoDocError):
+    """Raised when a project's sources.yaml is missing, malformed, or fails validation."""
+
+
 class ProjectNotFoundError(VideoDocError):
     """Raised when a project reference cannot be resolved to a path or registry entry."""
 

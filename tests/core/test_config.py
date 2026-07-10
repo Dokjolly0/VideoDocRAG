@@ -87,6 +87,14 @@ scan:
     - ".yaml"
     - ".yml"
     - ".md"
+  allowed_video_extensions:
+    - ".mp4"
+    - ".mkv"
+    - ".mov"
+    - ".avi"
+    - ".webm"
+    - ".m4v"
+    - ".wmv"
 
 documentation:
   format: "markdown"
@@ -177,3 +185,86 @@ def test_save_writes_reloadable_file(tmp_path):
     config.save(path)
     reloaded = ProjectConfig.load(path)
     assert reloaded == config
+
+
+def test_load_missing_file_raises_invalid_config_error(tmp_path):
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(tmp_path / "does-not-exist.yaml")
+
+
+def test_default_scan_allowed_video_extensions():
+    config = ProjectConfig.default(name="Demo", slug="demo")
+    assert config.scan.allowed_video_extensions == [
+        ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".wmv",
+    ]
+
+
+def _write_config(tmp_path, field, value):
+    # yaml.safe_dump (not manual f-string YAML) so backslash-heavy Windows
+    # paths are escaped correctly regardless of YAML quoting rules -- single-
+    # quoted YAML does NOT interpret backslash escapes the way Python's
+    # repr() does, so building the YAML text by hand here would silently test
+    # the wrong string.
+    raw = {"project": {"name": "Demo", "slug": "demo"}, "paths": {field: value}}
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("field", ["workdir", "indexes", "output", "database"])
+@pytest.mark.parametrize("bad_value", ["C:\\abs\\path", "C:foo", "\\foo", "/foo"])
+def test_internal_paths_reject_any_anchored_form(tmp_path, field, bad_value):
+    path = _write_config(tmp_path, field, bad_value)
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+@pytest.mark.parametrize("field", ["videos", "attachments", "codebase"])
+@pytest.mark.parametrize("bad_value", ["C:foo", "\\foo", "/foo"])
+def test_source_paths_reject_ambiguous_windows_forms(tmp_path, field, bad_value):
+    path = _write_config(tmp_path, field, bad_value)
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+@pytest.mark.parametrize("field", ["videos", "attachments", "codebase"])
+def test_source_paths_accept_true_absolute(tmp_path, field):
+    path = _write_config(tmp_path, field, "D:\\Corsi\\Workshop")
+    config = ProjectConfig.load(path)
+    assert getattr(config.paths, field) == "D:\\Corsi\\Workshop"
+
+
+@pytest.mark.parametrize("field", ["videos", "attachments", "codebase"])
+def test_source_paths_accept_clean_relative(tmp_path, field):
+    path = _write_config(tmp_path, field, "custom")
+    config = ProjectConfig.load(path)
+    assert getattr(config.paths, field) == "custom"
+
+
+@pytest.mark.parametrize("field", ["workdir", "indexes", "output", "database"])
+@pytest.mark.parametrize("bad_value", ["../outside", "sub/../../outside", "..\\outside"])
+def test_internal_paths_reject_parent_traversal(tmp_path, field, bad_value):
+    # A relative value with no anchor still escapes project_dir once joined
+    # with it if it walks upward via '..' -- the anchor-only check isn't
+    # enough to guarantee these fields stay physically inside the project.
+    path = _write_config(tmp_path, field, bad_value)
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+@pytest.mark.parametrize("field", ["videos", "attachments", "codebase"])
+@pytest.mark.parametrize("bad_value", ["../outside", "sub/../../outside"])
+def test_source_paths_reject_relative_parent_traversal(tmp_path, field, bad_value):
+    path = _write_config(tmp_path, field, bad_value)
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+@pytest.mark.parametrize("field", ["videos", "attachments", "codebase"])
+def test_source_paths_accept_parent_traversal_inside_true_absolute(tmp_path, field):
+    # '..' inside an already-absolute path is fine: it's never joined with
+    # project_dir (it's used directly), so it resolves unambiguously on its
+    # own regardless of the '..' segment.
+    path = _write_config(tmp_path, field, "D:\\Corsi\\..\\OtherCorsi\\Workshop")
+    config = ProjectConfig.load(path)
+    assert getattr(config.paths, field) == "D:\\Corsi\\..\\OtherCorsi\\Workshop"

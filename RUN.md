@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`). Le fasi successive della pipeline (scan, ingestion, trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni). Le fasi successive della pipeline (ingestion, trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
 
 ## Indice
 
@@ -75,6 +75,7 @@ Usage: videodoc [OPTIONS] COMMAND [ARGS]...
 | link                                                                        |
 | unlink                                                                      |
 | path                                                                        |
+| scan                                                                        |
 +-----------------------------------------------------------------------------+
 ```
 
@@ -113,6 +114,21 @@ In un percorso a scelta (es. un'altra unità, una cartella condivisa, una chiave
 ```powershell
 videodoc init corso-software-x --path "D:\Corsi\corso-software-x"
 ```
+
+**Video (o allegati, o codebase) già presenti altrove sul disco**: non serve copiarli dentro il progetto. `--videos`/`--attachments`/`--codebase` impostano un percorso esterno, referenziato non copiato (stesso principio dei "media collegati" di un editor video):
+
+```powershell
+videodoc init corso-software-x --videos "D:\Corsi\Registrazioni"
+```
+
+Questi tre flag hanno effetto **solo alla prima creazione** del progetto: se rilanciati su un progetto già esistente vengono ignorati con un avviso esplicito (`config.yaml` non viene mai sovrascritto), non silenziosamente scartati:
+
+```text
+Project 'corso-software-x' already initialized at ... (config.yaml kept unchanged)
+Warning: --videos ignored: config.yaml already exists and 'init' never overwrites it.
+```
+
+Un progetto con sorgenti esterne non è più interamente autocontenuto: spostare la cartella del progetto non porta con sé i video/allegati/codebase esterni (che restano dove sono). È una scelta consapevole — l'isolamento dei dati generati (`project.db`, indice Qdrant) resta comunque garantito, solo i materiali sorgente possono vivere altrove.
 
 Rilanciare `init` sullo stesso progetto è sicuro: non sovrascrive un `config.yaml` già esistente, riporta solo lo stato ("already initialized").
 
@@ -186,6 +202,38 @@ videodoc unlink corso-software-x
 
 Questo comando **non cancella mai i file del progetto**: agisce solo sul registro locale. Per riaverlo disponibile basta rilanciare `videodoc link <percorso>`.
 
+### 5.6 Scansionare le fonti di un progetto
+
+Enumera video, allegati e codebase (interni o esterni) e scrive `sources.yaml`:
+
+```powershell
+videodoc scan corso-software-x
+```
+
+```text
+Project: corso-software-x
+Videos: 8 found
+Attachments: 3 found
+Codebase: present (42 files)
+Excluded directories: .git, node_modules, __pycache__, dist, build, ...
+Excluded file patterns: .DS_Store
+Sources manifest updated: sources.yaml
+```
+
+Se una sorgente è esterna, viene segnalata esplicitamente:
+
+```text
+Videos: 8 found (external: D:\Corsi\Registrazioni)
+```
+
+Zero video trovati **non** fa fallire il comando (`exit code` resta `0`): sarà una fase successiva (ingestion) a rifiutarsi di procedere senza video, non lo scan. Allo stesso modo, una sorgente esterna mancante (es. un'unità scollegata) o che punta a un file invece che a una cartella produce solo un avviso, mai un crash:
+
+```text
+Warning: external videos path not found: Z:\NonEsiste\Videos
+```
+
+Le esclusioni si basano sulla sezione `scan:` di `config.yaml` (default già ragionevoli — `.git/`, `node_modules/`, `__pycache__/`, ecc. — personalizzabili con `add_excludes`/`remove_excludes`, vedi README §8.3). `sources.yaml` viene **sempre rigenerato per intero** a ogni scan, mai preservato: rilanciarlo dopo aver aggiunto un video aggiorna semplicemente il manifest.
+
 ## 6. Personalizzare i percorsi (variabili d'ambiente)
 
 Due variabili d'ambiente permettono di controllare dove VideoDocRAG legge/scrive i propri dati, utili per test, ambienti sandbox o setup non standard:
@@ -249,11 +297,19 @@ Il file `config.yaml` è stato modificato a mano con un valore fuori dai limiti 
 **Il registro locale sembra "resettato" dopo un errore.**
 Se `registry.json` risultava corrotto (JSON non valido o struttura inattesa), viene automaticamente rinominato in `registry.json.corrupted-<timestamp>` nella stessa cartella e si riparte da un registro vuoto, senza bloccare il comando. Controlla quella cartella (§6, `VIDEODOC_DATA_DIR`) se pensi di aver perso delle registrazioni: i progetti non vengono mai cancellati dal disco, puoi sempre ri-registrarli con `videodoc link <percorso>`.
 
+**`Error: paths.videos must be either a clean relative path ... or a fully absolute path ...`.**
+Il valore passato a `--videos`/`--attachments`/`--codebase` (o scritto a mano in `config.yaml`) è una forma Windows ambigua tipo `C:foo` (relativa alla cartella corrente sul drive C:) o `\foo`/`/foo` (relativa alla radice del drive corrente) — nessuna delle due è né un percorso relativo pulito al progetto né un percorso assoluto esplicito. Usa un percorso completo (`D:\Corsi\Workshop`) o un nome relativo semplice (`videos`).
+
+**`Error: ... must not contain '..' path segments ...`.**
+Un valore relativo tipo `../altrove` o `sub/../../altrove` per `workdir`/`indexes`/`output`/`database`/`--videos`/`--attachments`/`--codebase` verrebbe risolto uscendo dalla cartella del progetto una volta unito al suo percorso — non è ammesso. Se l'intento è davvero riferirsi a una cartella esterna, usa un percorso assoluto esplicito (`D:\Corsi\Workshop`); per `workdir`/`indexes`/`output`/`database` non è mai ammesso un riferimento esterno (devono restare dentro il progetto, vedi §5.1).
+
+**`scan` riporta "Videos: 0 found" ma i video ci sono.**
+Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.allowed_video_extensions`, default `.mp4 .mkv .mov .avi .webm .m4v .wmv`) e che, se hai configurato un percorso esterno, quel percorso esista davvero e sia una cartella (non un file) — `scan` lo segnala con un `Warning` esplicito in entrambi i casi di problema.
+
 ## 9. Cosa non è ancora disponibile
 
-Questo step copre solo la gestione dei progetti. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi due step coprono solo la gestione dei progetti e la scansione delle fonti. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
-- `videodoc scan` — scansione delle fonti (video/attachments/codebase) del progetto;
 - `videodoc ingest`, `sync-codebase` — registrazione video e sincronizzazione codebase;
 - `videodoc transcribe`, `frames`, `ocr`, `code` — trascrizione audio, estrazione frame, OCR, riconoscimento codice;
 - `videodoc chunk`, `index` — chunking ed embedding/indicizzazione vettoriale;
