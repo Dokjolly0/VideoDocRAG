@@ -36,3 +36,11 @@
 - Hardened: a video id collision (two different files whose names both slugify to the same identifier) is detected both within a single run and against a previous run's `project.db`, raising `VideoIdCollisionError` instead of silently overwriting an unrelated video's data
 - Fixed (caught by the test suite's `ResourceWarning`, not by inspection): `sqlite3.Connection` used bare as a context manager only wraps commit/rollback, it does not close the connection — `core/storage/database.py` now chains `contextlib.closing(...)` to actually release the file handle on every query
 - Added `docs/commands.md`: a single always-up-to-date reference listing every implemented CLI command with its syntax and expected output
+
+## Step 4 — Audio extraction
+- Added `videodoc extract-audio`: for every video already registered by `ingest`, extracts mono 16kHz PCM WAV audio via FFmpeg into `workdir/<id>/audio/<id>.wav` and updates that video's `metadata.json` (`audio_path`) — see [features/audio-extraction.md](features/audio-extraction.md)
+- Added `core/storage/database.py::list_videos()`, the first batch-read over every registered video (previously only single-video lookup via `get_video` existed)
+- Hardened: audio is written to a temporary `.tmp` path and moved onto the final `.wav` only via an atomic `Path.replace()` after FFmpeg succeeds — an interrupted FFmpeg process (crash, disk full, Ctrl+C) can no longer leave a partial/corrupt file at the path the idempotency check reads, which would otherwise be misread as "already extracted" forever with no way to detect or fix it
+- Idempotent by file presence: if a video's `.wav` already exists, FFmpeg is never re-invoked; `metadata.json` is still reconciled if it was left holding `ingest`'s original folder-only placeholder
+- Fixed: `db_path.exists()` is checked before any `sqlite3.connect()` call, so a project where `ingest` was never run raises `NoVideosFoundError` without silently creating an empty `project.db` file as a side effect of the failure path itself
+- README §12.1/§16 updated to reflect the dedicated `extract-audio` command, which the README's own command list previously omitted (it jumped straight from `ingest` to the not-yet-implemented `transcribe`)

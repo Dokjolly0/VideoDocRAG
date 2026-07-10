@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`; Step 4: estrazione audio — `extract-audio`) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -23,7 +23,7 @@ Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocc
 - Windows, Linux o macOS, con un terminale (PowerShell su Windows; bash/zsh su Linux/macOS).
 - Python 3.11 o superiore.
 - Nessuna dipendenza esterna richiesta per `init`/`scan`/`list`/`link`/`unlink`/`path` (niente Ollama, FFmpeg, Qdrant: servono solo dalle fasi successive della pipeline).
-- **`ffprobe` (parte di FFmpeg) è invece richiesto da `videodoc ingest`** (Step 3) — è il primo comando che ha bisogno di uno strumento esterno:
+- **`ffprobe` e `ffmpeg` (entrambi parte di FFmpeg) sono richiesti rispettivamente da `videodoc ingest`** (Step 3) **e `videodoc extract-audio`** (Step 4) — sono i primi due comandi che hanno bisogno di uno strumento esterno. Una singola installazione di FFmpeg fornisce entrambi i binari:
 
   **Windows (PowerShell):**
   ```powershell
@@ -41,10 +41,11 @@ Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocc
   brew install ffmpeg
   ```
 
-  Verifica che sia disponibile in `PATH`:
+  Verifica che entrambi siano disponibili in `PATH`:
 
   ```bash
   ffprobe -version
+  ffmpeg -version
   ```
 
 ## 2. Nota importante: quale Python usare
@@ -335,6 +336,32 @@ Warning: workshop-05: video content changed and was reingested -- workdir/worksh
 
 A differenza di `scan`, **zero video trovati fa fallire `ingest`** (`exit code` 1): è il primo comando della pipeline vera e propria, e README §15.1 richiede che un progetto senza video non possa avviarla. Se `ffprobe` non è disponibile in `PATH`, `ingest` fallisce subito, senza creare `project.db` né alcuna cartella.
 
+### 5.8 Estrarre l'audio dai video di un progetto
+
+Per ogni video già registrato con `ingest`, estrae l'audio in WAV mono a 16kHz (via `ffmpeg`, vedi §1 per l'installazione) in `workdir/<id>/audio/<id>.wav` e aggiorna `metadata.json`:
+
+```bash
+videodoc extract-audio corso-software-x
+```
+
+```text
+Project: corso-software-x
+Audio extracted: 8, skipped (already extracted): 0
+```
+
+È idempotente per presenza del file: rilanciandolo, i video già estratti vengono saltati senza richiamare `ffmpeg`:
+
+```bash
+videodoc extract-audio corso-software-x
+```
+
+```text
+Project: corso-software-x
+Audio extracted: 0, skipped (already extracted): 8
+```
+
+Se nessun video è ancora stato registrato (`ingest` non è mai stato eseguito) o se `ffmpeg` non è disponibile in `PATH`, il comando fallisce subito (`exit code` 1) senza creare o modificare nulla. Un problema di estrazione su un singolo video (es. codec non supportato) non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0.
+
 ## 6. Personalizzare i percorsi (variabili d'ambiente)
 
 Due variabili d'ambiente permettono di controllare dove VideoDocRAG legge/scrive i propri dati, utili per test, ambienti sandbox o setup non standard:
@@ -446,7 +473,7 @@ FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente
 
 ## 9. Cosa non è ancora disponibile
 
-Questi tre step coprono la gestione dei progetti, la scansione delle fonti e l'ingestion dei video. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi quattro step coprono la gestione dei progetti, la scansione delle fonti, l'ingestion dei video e l'estrazione audio. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
 - `videodoc sync-codebase` — sincronizzazione e indicizzazione della codebase;
 - `videodoc transcribe`, `frames`, `ocr`, `code` — trascrizione audio, estrazione frame, OCR, riconoscimento codice;

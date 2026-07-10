@@ -1,7 +1,10 @@
+import contextlib
+import sqlite3
+
 import pytest
 
 from videodoc.core.errors import DatabaseError
-from videodoc.core.storage.database import VideoRow, ensure_schema, get_video, upsert_video
+from videodoc.core.storage.database import VideoRow, ensure_schema, get_video, list_videos, upsert_video
 
 
 def _row(**overrides) -> VideoRow:
@@ -77,3 +80,38 @@ def test_upsert_video_wraps_sqlite_error(tmp_path):
     db_path.mkdir()
     with pytest.raises(DatabaseError):
         upsert_video(db_path, _row())
+
+
+def test_list_videos_empty_after_schema_created(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    assert list_videos(db_path) == []
+
+
+def test_list_videos_returns_empty_when_table_missing(tmp_path):
+    """A project.db file that exists but was never fully schema-initialized
+    (e.g. created by something other than ensure_schema) must read as 'no
+    videos', not as a structural database error -- the caller treats this
+    the same as 'ingest was never run'."""
+    db_path = tmp_path / "project.db"
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("CREATE TABLE unrelated (id TEXT)")
+    assert list_videos(db_path) == []
+
+
+def test_list_videos_ordered_by_id(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row(id="zeta", filename="Zeta.mp4"))
+    upsert_video(db_path, _row(id="alpha", filename="Alpha.mp4"))
+    upsert_video(db_path, _row(id="mid", filename="Mid.mp4"))
+
+    rows = list_videos(db_path)
+    assert [r.id for r in rows] == ["alpha", "mid", "zeta"]
+
+
+def test_list_videos_wraps_sqlite_error(tmp_path):
+    db_path = tmp_path / "not-a-file"
+    db_path.mkdir()
+    with pytest.raises(DatabaseError):
+        list_videos(db_path)

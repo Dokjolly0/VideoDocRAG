@@ -132,3 +132,23 @@ Database updated: project.db
 Warning: workshop-05: video content changed and was reingested -- workdir/workshop-05/{audio,frames,transcript,ocr,chunks} may still contain artifacts from the previous version (never deleted automatically); re-run the relevant pipeline phase(s) to refresh them.
 ```
 **Vedi anche:** [features/ingest.md](features/ingest.md)
+
+---
+
+## extract-audio
+
+**Sintassi:** `videodoc extract-audio <project>`
+**Descrizione:** Per ogni video già registrato con `ingest`, estrae l'audio in WAV mono a 16kHz via FFmpeg in `workdir/<id>/audio/<id>.wav` e aggiorna `metadata.json` (`audio_path`). Idempotente per presenza del file: se il `.wav` esiste già, FFmpeg non viene invocato.
+**Exit code:** 0 = successo, anche con errori per-video (estrazione fallita su un singolo file: stampati come `Warning`, il video viene saltato, gli altri continuano). 1 = progetto sconosciuto, `config.yaml` non valido, **nessun video ancora registrato** (`ingest` mai eseguito), `ffmpeg` non disponibile in `PATH`, o problema strutturale su `project.db`.
+**Prerequisito:** richiede `ffmpeg` (parte di FFmpeg, distinto da `ffprobe` già richiesto da `ingest`) in `PATH` — vedi `RUN.md` §1.
+**Esempio:**
+```
+$ videodoc extract-audio corso-software-x
+Project: corso-software-x
+Audio extracted: 8, skipped (already extracted): 0
+
+$ videodoc extract-audio corso-software-x
+Project: corso-software-x
+Audio extracted: 0, skipped (already extracted): 8
+```
+**Vedi anche:** [features/audio-extraction.md](features/audio-extraction.md)

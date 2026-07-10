@@ -1044,6 +1044,7 @@ videodoc unlink <project_name>
 videodoc path <project_name>
 videodoc scan <project_name>
 videodoc ingest <project_name>
+videodoc extract-audio <project_name>
 videodoc sync-codebase <project_name>
 videodoc transcribe <project_name>
 videodoc frames <project_name>
@@ -1373,7 +1374,13 @@ La sincronizzazione deve:
 
 L’audio viene estratto dal video per poter essere trascritto.
 
-Comando FFmpeg consigliato:
+Comando dedicato:
+
+```bash
+videodoc extract-audio <project_name>
+```
+
+Per ogni video già registrato (`videodoc ingest`), esegue internamente:
 
 ```bash
 ffmpeg -i workshop_01_installazione.mp4 \
@@ -1392,7 +1399,7 @@ Spiegazione:
 - `-ar 16000` imposta il sample rate a 16 kHz;
 - `-ac 1` converte l’audio in mono.
 
-L’audio estratto deve essere salvato nella cartella di lavoro del video.
+L’audio estratto viene salvato in `workdir/<video_id>/audio/<video_id>.wav` (lo stesso identificatore canonico già usato per la riga del video in `project.db` e per la cartella di lavoro — vedi §14/§15), e il percorso viene registrato in `metadata.json` (`audio_path`). L'operazione è idempotente: se il file audio esiste già, il video viene saltato senza richiamare FFmpeg.
 
 ---
 

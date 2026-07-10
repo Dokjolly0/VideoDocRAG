@@ -63,6 +63,32 @@ def get_video(db_path: Path, video_id: str) -> VideoRow | None:
     return VideoRow(*row) if row is not None else None
 
 
+def list_videos(db_path: Path) -> list[VideoRow]:
+    """All registered videos, ordered by id for determinism -- mirrors how
+    ingest processes sorted(video_files), needed by any batch operation
+    over every already-ingested video (e.g. audio extraction).
+
+    Returns an empty list, rather than raising, if the videos table
+    doesn't exist yet (a project.db file created but never fully
+    schema-initialized) -- equivalent to "nothing has been ingested",
+    which the caller is expected to treat as NoVideosFoundError, not as a
+    structural database problem."""
+    try:
+        with closing(sqlite3.connect(db_path)) as conn, conn:
+            table_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='videos'"
+            ).fetchone()
+            if table_exists is None:
+                return []
+            rows = conn.execute(
+                "SELECT id, filename, title, duration_seconds, file_hash, path, created_at "
+                "FROM videos ORDER BY id"
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot list videos in {db_path}: {exc}") from exc
+    return [VideoRow(*row) for row in rows]
+
+
 def upsert_video(db_path: Path, row: VideoRow) -> None:
     # ON CONFLICT deliberately omits title/created_at from the update
     # clause: a reingest triggered by a changed file hash must never clobber
