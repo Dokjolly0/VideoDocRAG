@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni) su **Windows, Linux o macOS**. Le fasi successive della pipeline (ingestion, trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (trascrizione, OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -22,7 +22,30 @@ Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocc
 
 - Windows, Linux o macOS, con un terminale (PowerShell su Windows; bash/zsh su Linux/macOS).
 - Python 3.11 o superiore.
-- Nessuna altra dipendenza esterna richiesta in questi step (niente Ollama, FFmpeg, Qdrant: servono solo dalle fasi successive della pipeline).
+- Nessuna dipendenza esterna richiesta per `init`/`scan`/`list`/`link`/`unlink`/`path` (niente Ollama, FFmpeg, Qdrant: servono solo dalle fasi successive della pipeline).
+- **`ffprobe` (parte di FFmpeg) è invece richiesto da `videodoc ingest`** (Step 3) — è il primo comando che ha bisogno di uno strumento esterno:
+
+  **Windows (PowerShell):**
+  ```powershell
+  winget install Gyan.FFmpeg
+  # oppure: choco install ffmpeg
+  ```
+
+  **Linux (bash):**
+  ```bash
+  sudo apt install ffmpeg   # Debian/Ubuntu; usa il gestore pacchetti della tua distro
+  ```
+
+  **macOS (zsh):**
+  ```bash
+  brew install ffmpeg
+  ```
+
+  Verifica che sia disponibile in `PATH`:
+
+  ```bash
+  ffprobe -version
+  ```
 
 ## 2. Nota importante: quale Python usare
 
@@ -290,6 +313,28 @@ Warning: external videos path not found: /mnt/corsi/registrazioni
 
 Le esclusioni si basano sulla sezione `scan:` di `config.yaml` (default già ragionevoli — `.git/`, `node_modules/`, `__pycache__/`, ecc. — personalizzabili con `add_excludes`/`remove_excludes`, vedi README §8.3). `sources.yaml` viene **sempre rigenerato per intero** a ogni scan, mai preservato: rilanciarlo dopo aver aggiunto un video aggiorna semplicemente il manifest.
 
+### 5.7 Registrare (ingest) i video di un progetto
+
+Calcola l'hash di ogni video, ne estrae durata/formato/risoluzione/codec con `ffprobe` (vedi §1 per l'installazione), lo registra in `project.db` e crea `workdir/<id>/{audio,frames,transcript,ocr,chunks}/` + `metadata.json`:
+
+```bash
+videodoc ingest corso-software-x
+```
+
+```text
+Project: corso-software-x
+Videos ingested: 8, reingested (changed): 0, skipped (unchanged): 0
+Database updated: project.db
+```
+
+È idempotente per contenuto: un video invariato viene saltato (senza nemmeno essere ri-analizzato da `ffprobe`); un video modificato viene riprocessato e genera un avviso, non un errore, sui possibili artefatti obsoleti nelle sue sottocartelle (mai cancellate automaticamente):
+
+```text
+Warning: workshop-05: video content changed and was reingested -- workdir/workshop-05/{audio,frames,transcript,ocr,chunks} may still contain artifacts from the previous version (never deleted automatically); re-run the relevant pipeline phase(s) to refresh them.
+```
+
+A differenza di `scan`, **zero video trovati fa fallire `ingest`** (`exit code` 1): è il primo comando della pipeline vera e propria, e README §15.1 richiede che un progetto senza video non possa avviarla. Se `ffprobe` non è disponibile in `PATH`, `ingest` fallisce subito, senza creare `project.db` né alcuna cartella.
+
 ## 6. Personalizzare i percorsi (variabili d'ambiente)
 
 Due variabili d'ambiente permettono di controllare dove VideoDocRAG legge/scrive i propri dati, utili per test, ambienti sandbox o setup non standard:
@@ -396,11 +441,14 @@ Un valore relativo tipo `../altrove` o `sub/../../altrove` per `workdir`/`indexe
 **`scan` riporta "Videos: 0 found" ma i video ci sono.**
 Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.allowed_video_extensions`, default `.mp4 .mkv .mov .avi .webm .m4v .wmv`) e che, se hai configurato un percorso esterno, quel percorso esista davvero e sia una cartella (non un file) — `scan` lo segnala con un `Warning` esplicito in entrambi i casi di problema.
 
+**`videodoc ingest` fallisce con "ffprobe ... was not found on PATH".**
+FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
+
 ## 9. Cosa non è ancora disponibile
 
-Questi due step coprono solo la gestione dei progetti e la scansione delle fonti. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi tre step coprono la gestione dei progetti, la scansione delle fonti e l'ingestion dei video. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
-- `videodoc ingest`, `sync-codebase` — registrazione video e sincronizzazione codebase;
+- `videodoc sync-codebase` — sincronizzazione e indicizzazione della codebase;
 - `videodoc transcribe`, `frames`, `ocr`, `code` — trascrizione audio, estrazione frame, OCR, riconoscimento codice;
 - `videodoc chunk`, `index` — chunking ed embedding/indicizzazione vettoriale;
 - `videodoc outline`, `generate`, `review`, `export` — generazione e revisione della documentazione;

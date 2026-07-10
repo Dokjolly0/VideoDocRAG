@@ -20,3 +20,23 @@ class ProjectNotFoundError(VideoDocError):
 
 class RegistryConflictError(VideoDocError):
     """Raised when registering a project name would overwrite a different existing path."""
+
+
+class ExternalToolNotFoundError(VideoDocError):
+    """Raised when a required external binary (e.g. ffprobe) is not found on PATH."""
+
+
+class NoVideosFoundError(VideoDocError):
+    """Raised when a project's videos/ source (internal or external) resolves to zero video files."""
+
+
+class VideoIdCollisionError(VideoDocError):
+    """Raised when two different video files would resolve to the same slugified video id."""
+
+
+class InvalidVideoMetadataError(VideoDocError):
+    """Raised when a video's metadata.json is missing, malformed, or fails validation."""
+
+
+class DatabaseError(VideoDocError):
+    """Raised when a structural (not per-video) failure occurs reading or writing project.db."""

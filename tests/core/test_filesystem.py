@@ -7,9 +7,11 @@ from videodoc.core.config import ScanSection
 from videodoc.core.storage.filesystem import (
     DEFAULT_EXCLUDES,
     PROJECT_SUBDIRS,
+    VIDEO_WORKDIR_SUBDIRS,
     codebase_is_present,
     ensure_project_structure,
     ensure_sources_yaml,
+    ensure_video_workdir,
     resolve_excludes,
     resolve_source_path,
     scan_attachments,
@@ -34,6 +36,23 @@ def test_ensure_project_structure_is_idempotent_and_preserves_content(tmp_path):
 
     ensure_project_structure(project_dir)
     assert marker.read_text(encoding="utf-8") == "fake video"
+
+
+def test_ensure_video_workdir_creates_all_subdirs(tmp_path):
+    video_dir = tmp_path / "workdir" / "demo"
+    ensure_video_workdir(video_dir)
+    for sub in VIDEO_WORKDIR_SUBDIRS:
+        assert (video_dir / sub).is_dir()
+
+
+def test_ensure_video_workdir_is_idempotent_and_preserves_content(tmp_path):
+    video_dir = tmp_path / "workdir" / "demo"
+    ensure_video_workdir(video_dir)
+    marker = video_dir / "audio" / "keep-me.wav"
+    marker.write_text("fake audio", encoding="utf-8")
+
+    ensure_video_workdir(video_dir)
+    assert marker.read_text(encoding="utf-8") == "fake audio"
 
 
 def test_ensure_sources_yaml_creates_placeholder_once(tmp_path):

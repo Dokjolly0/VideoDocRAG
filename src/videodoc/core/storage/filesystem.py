@@ -183,6 +183,21 @@ def ensure_project_structure(project_dir: Path) -> None:
         (project_dir / sub).mkdir(parents=True, exist_ok=True)
 
 
+# README §15 order.
+VIDEO_WORKDIR_SUBDIRS = ("audio", "frames", "transcript", "ocr", "chunks")
+
+
+def ensure_video_workdir(video_dir: Path) -> None:
+    """Create a single video's per-video workdir and its standard
+    subfolders. Idempotent, same shape as ensure_project_structure -- never
+    errors if folders already exist, never touches existing files (so a
+    reingest never wipes out artifacts a later pipeline phase already
+    produced there)."""
+    video_dir.mkdir(parents=True, exist_ok=True)
+    for sub in VIDEO_WORKDIR_SUBDIRS:
+        (video_dir / sub).mkdir(parents=True, exist_ok=True)
+
+
 def ensure_sources_yaml(project_dir: Path) -> Path:
     """Create an empty placeholder sources.yaml only if it doesn't exist yet;
     never overwrites an existing file. The real schema for sources.yaml will

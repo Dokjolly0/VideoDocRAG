@@ -1,0 +1,41 @@
+import typer
+
+from videodoc.cli.output import console, print_error, print_warning
+from videodoc.core.errors import (
+    DatabaseError,
+    ExternalToolNotFoundError,
+    InvalidConfigError,
+    NoVideosFoundError,
+    ProjectNotFoundError,
+    VideoIdCollisionError,
+)
+from videodoc.core.services.ingest_service import VideoIngestionService
+from videodoc.core.services.project_service import ProjectService
+
+
+def ingest_command(project: str = typer.Argument(..., help="Project name or path")) -> None:
+    try:
+        service = ProjectService.load(project)
+        result = VideoIngestionService(service.project_dir, service.config).run()
+    except (
+        ProjectNotFoundError,
+        InvalidConfigError,
+        NoVideosFoundError,
+        ExternalToolNotFoundError,
+        VideoIdCollisionError,
+        DatabaseError,
+    ) as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1)
+
+    console.print(f"Project: {service.config.project.slug}")
+    console.print(
+        f"Videos ingested: {len(result.ingested)}, reingested (changed): {len(result.reingested)}, "
+        f"skipped (unchanged): {len(result.skipped)}"
+    )
+    console.print(f"Database updated: {result.database_path.name}")
+
+    for warning in result.warnings:
+        print_warning(warning)
+    for error in result.errors:
+        print_warning(error)
