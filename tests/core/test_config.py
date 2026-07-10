@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 import yaml
 
@@ -212,13 +214,35 @@ def _write_config(tmp_path, field, value):
 
 
 @pytest.mark.parametrize("field", ["workdir", "indexes", "output", "database"])
-@pytest.mark.parametrize("bad_value", ["C:\\abs\\path", "C:foo", "\\foo", "/foo"])
-def test_internal_paths_reject_any_anchored_form(tmp_path, field, bad_value):
+def test_internal_paths_reject_leading_slash_cross_platform(tmp_path, field):
+    # "/foo" is anchored -- and fully absolute -- under BOTH Windows and
+    # POSIX path rules, so this specific case is rejected on every supported
+    # OS with no skip needed (unlike the Windows-only forms below).
+    path = _write_config(tmp_path, field, "/foo")
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="drive-relative ('C:foo') and root-relative ('\\foo') forms are only ambiguous under Windows path "
+    "rules -- ProjectConfig.load() validates using the host's native path semantics (core/utils/paths.py), so "
+    "on POSIX these are just harmless relative filenames and are correctly accepted there, not rejected.",
+)
+@pytest.mark.parametrize("field", ["workdir", "indexes", "output", "database"])
+@pytest.mark.parametrize("bad_value", ["C:\\abs\\path", "C:foo", "\\foo"])
+def test_internal_paths_reject_windows_specific_anchored_forms(tmp_path, field, bad_value):
     path = _write_config(tmp_path, field, bad_value)
     with pytest.raises(InvalidConfigError):
         ProjectConfig.load(path)
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="drive-relative ('C:foo'), root-relative ('\\foo'), and even a leading '/' are only ambiguous "
+    "forms under Windows path rules for these three fields -- on POSIX a leading '/' is unambiguously "
+    "absolute (a valid external source), not an error, so this whole case is Windows-specific.",
+)
 @pytest.mark.parametrize("field", ["videos", "attachments", "codebase"])
 @pytest.mark.parametrize("bad_value", ["C:foo", "\\foo", "/foo"])
 def test_source_paths_reject_ambiguous_windows_forms(tmp_path, field, bad_value):
@@ -242,12 +266,26 @@ def test_source_paths_accept_clean_relative(tmp_path, field):
 
 
 @pytest.mark.parametrize("field", ["workdir", "indexes", "output", "database"])
-@pytest.mark.parametrize("bad_value", ["../outside", "sub/../../outside", "..\\outside"])
+@pytest.mark.parametrize("bad_value", ["../outside", "sub/../../outside"])
 def test_internal_paths_reject_parent_traversal(tmp_path, field, bad_value):
     # A relative value with no anchor still escapes project_dir once joined
     # with it if it walks upward via '..' -- the anchor-only check isn't
     # enough to guarantee these fields stay physically inside the project.
+    # Forward-slash forms only: this traversal detection is cross-platform
+    # (the backslash form is tested separately below, Windows-only).
     path = _write_config(tmp_path, field, bad_value)
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="backslash is not a path separator under POSIX rules -- '..\\\\outside' is a single literal "
+    "filename there, not a traversal, so it is correctly accepted on POSIX, not rejected.",
+)
+@pytest.mark.parametrize("field", ["workdir", "indexes", "output", "database"])
+def test_internal_paths_reject_windows_backslash_parent_traversal(tmp_path, field):
+    path = _write_config(tmp_path, field, "..\\outside")
     with pytest.raises(InvalidConfigError):
         ProjectConfig.load(path)
 

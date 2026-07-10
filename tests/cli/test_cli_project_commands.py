@@ -31,8 +31,11 @@ def test_init_with_videos_option_end_to_end(tmp_path):
 
 
 def test_init_invalid_videos_option_fails_cleanly(tmp_path):
+    # "../outside" is invalid on every supported OS (unlike a Windows-only
+    # ambiguous form like "C:foo", which POSIX accepts as a harmless
+    # relative filename -- see core/utils/paths.py).
     custom = tmp_path / "demo"
-    result = runner.invoke(app, ["init", "demo", "--path", str(custom), "--videos", "C:foo"])
+    result = runner.invoke(app, ["init", "demo", "--path", str(custom), "--videos", "../outside"])
     assert result.exit_code == 1
     # No unhandled exception (a raw pydantic.ValidationError would show up here
     # as a genuine crash, not a clean SystemExit(1) from typer.Exit).

@@ -129,9 +129,12 @@ def test_init_rerun_with_multiple_ignored_overrides(tmp_path):
 
 
 def test_init_invalid_videos_option_raises_invalid_config_error(tmp_path):
+    # "../outside" (parent-traversal) is invalid on every supported OS,
+    # unlike a Windows-specific ambiguous form like "C:foo" which POSIX
+    # accepts as a harmless relative filename -- see core/utils/paths.py.
     registry = ProjectRegistry(tmp_path / "registry.json")
     with pytest.raises(InvalidConfigError):
-        ProjectService.init("demo", path=tmp_path / "demo", videos="C:foo", registry=registry)
+        ProjectService.init("demo", path=tmp_path / "demo", videos="../outside", registry=registry)
 
 
 def test_init_invalid_videos_option_creates_nothing_on_disk(tmp_path):
@@ -141,7 +144,7 @@ def test_init_invalid_videos_option_creates_nothing_on_disk(tmp_path):
     registry = ProjectRegistry(tmp_path / "registry.json")
     target = tmp_path / "demo"
     with pytest.raises(InvalidConfigError):
-        ProjectService.init("demo", path=target, videos="C:foo", registry=registry)
+        ProjectService.init("demo", path=target, videos="../outside", registry=registry)
     assert not target.exists()
     assert registry.resolve("demo") is None
 
