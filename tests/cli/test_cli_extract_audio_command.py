@@ -102,3 +102,13 @@ def test_extract_audio_rerun_shows_all_skipped(tmp_path, monkeypatch):
     assert "Skipped" in result.stdout
     skipped_line = next(line for line in result.stdout.splitlines() if "Skipped" in line)
     assert "1" in skipped_line
+
+def test_extract_audio_accepts_workers_flag(tmp_path, monkeypatch):
+    custom = _ingest_one_video(tmp_path)
+    _ingest_via_cli(monkeypatch, "demo")
+    _available_ffmpeg(monkeypatch)
+    _stub_extract(monkeypatch)
+
+    result = runner.invoke(app, ["extract-audio", "demo", "--workers", "1"])
+    assert result.exit_code == 0
+    assert (custom / "workdir" / "demo" / "audio" / "demo.wav").is_file()

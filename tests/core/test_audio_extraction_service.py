@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -320,3 +321,26 @@ def test_metadata_save_failure_reported_as_error(tmp_path, monkeypatch):
     assert len(result.errors) == 1
     assert "demo" in result.errors[0]
     assert (video_dir / "audio" / "demo.wav").is_file()
+
+def test_parallel_extraction_returns_results_in_submission_order(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, video_id="alpha", filename="Alpha.mp4")
+    _seed_video(project_dir, config, video_id="zeta", filename="Zeta.mp4")
+    _available_ffmpeg(monkeypatch)
+
+    zeta_started = threading.Event()
+
+    def out_of_order_extract(video_path, output_path, **kwargs):
+        if video_path.name == "Alpha.mp4":
+            assert zeta_started.wait(timeout=2)
+        else:
+            zeta_started.set()
+        output_path.write_bytes(b"RIFF")
+
+    _stub_extract(monkeypatch, out_of_order_extract)
+
+    result = AudioExtractionService(project_dir, config, workers_override=2).run()
+
+    assert result.extracted == ("alpha", "zeta")

@@ -25,6 +25,7 @@ def extract_audio(
     *,
     total_duration_seconds: float | None = None,
     progress_callback: Callable[[float], None] | None = None,
+    threads: int | None = None,
 ) -> None:
     """Extract mono 16kHz PCM WAV audio from video_path into output_path
     (README §16's exact invocation) -- the standard input format expected
@@ -44,13 +45,14 @@ def extract_audio(
     given (it's what turns ffmpeg's raw out_time_ms into a 0..1 fraction);
     without both, this falls back to the plain blocking invocation, since
     there's nothing meaningful to report."""
+    thread_args = _thread_args(threads)
     if progress_callback is not None and total_duration_seconds:
-        _extract_audio_with_progress(video_path, output_path, total_duration_seconds, progress_callback)
+        _extract_audio_with_progress(video_path, output_path, total_duration_seconds, progress_callback, thread_args)
         return
 
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", str(video_path), *_FFMPEG_ARGS, str(output_path)],
+            ["ffmpeg", "-y", "-i", str(video_path), *thread_args, *_FFMPEG_ARGS, str(output_path)],
             capture_output=True,
             text=True,
             check=True,
@@ -64,6 +66,7 @@ def _extract_audio_with_progress(
     output_path: Path,
     total_duration_seconds: float,
     progress_callback: Callable[[float], None],
+    thread_args: tuple[str, ...],
 ) -> None:
     """-progress pipe:1 -nostats makes ffmpeg emit machine-readable
     'key=value' progress lines on stdout (out_time_ms=... among them)
@@ -73,7 +76,7 @@ def _extract_audio_with_progress(
     try:
         process = subprocess.Popen(
             [
-                "ffmpeg", "-y", "-i", str(video_path), *_FFMPEG_ARGS,
+                "ffmpeg", "-y", "-i", str(video_path), *thread_args, *_FFMPEG_ARGS,
                 "-progress", "pipe:1", "-nostats", str(output_path),
             ],
             stdout=subprocess.PIPE,
@@ -100,3 +103,11 @@ def _extract_audio_with_progress(
         raise AudioExtractionError(
             f"ffmpeg failed to extract audio from {video_path}: exit code {returncode}: {stderr_output.strip()}"
         )
+
+
+def _thread_args(threads: int | None) -> tuple[str, ...]:
+    if threads is None:
+        return ()
+    if threads <= 0:
+        raise ValueError("threads must be a positive integer")
+    return ("-threads", str(threads))

@@ -126,3 +126,37 @@ def test_extract_audio_with_progress_raises_on_oserror(tmp_path, monkeypatch):
             total_duration_seconds=10.0,
             progress_callback=lambda f: None,
         )
+
+def test_extract_audio_passes_threads_to_ffmpeg_run(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", fake_run)
+
+    extract_audio(tmp_path / "a.mp4", tmp_path / "a.wav.tmp", threads=3)
+
+    args = captured["args"]
+    assert args[args.index("-threads") + 1] == "3"
+
+
+def test_extract_audio_with_progress_passes_threads_to_ffmpeg_popen(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_popen(args, **kwargs):
+        captured["args"] = args
+        return _FakeProgressProcess(args, ["progress=end\n"])
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "Popen", fake_popen)
+
+    extract_audio(
+        tmp_path / "a.mp4", tmp_path / "a.wav.tmp",
+        total_duration_seconds=10.0,
+        progress_callback=lambda f: None,
+        threads=2,
+    )
+
+    args = captured["args"]
+    assert args[args.index("-threads") + 1] == "2"

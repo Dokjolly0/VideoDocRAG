@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 import ctypes
+import platform
+
+
+CUBLAS_LIBRARY_NAMES: dict[str, str] = {
+    "Windows": "cublas64_12.dll",
+    "Linux": "libcublas.so.12",
+}
 
 
 class CudaProbeError(Exception):
@@ -59,3 +66,28 @@ def probe_cublas_loadable(library_name: str) -> None:
         ctypes.CDLL(library_name, winmode=0)
     except OSError as exc:
         raise CudaProbeError(f"Could not load {library_name}: {exc}") from exc
+
+
+def cuda_is_usable(platform_name: str | None = None) -> bool:
+    """True when CTranslate2 sees a CUDA device and cuBLAS can be loaded.
+
+    This is deliberately boolean and conservative for runtime auto-selection:
+    diagnostic detail belongs in DoctorService, while `device: auto` only
+    needs to know whether choosing CUDA is likely to succeed.
+    """
+    try:
+        device_count = get_cuda_device_count()
+    except CudaProbeError:
+        return False
+    if device_count <= 0:
+        return False
+
+    library_name = CUBLAS_LIBRARY_NAMES.get(platform_name or platform.system())
+    if library_name is None:
+        return False
+
+    try:
+        probe_cublas_loadable(library_name)
+    except CudaProbeError:
+        return False
+    return True

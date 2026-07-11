@@ -14,11 +14,14 @@ from videodoc.core.services.ingest_service import VideoIngestionService
 from videodoc.core.services.project_service import ProjectService
 
 
-def ingest_command(project: str = typer.Argument(..., help="Project name or path")) -> None:
+def ingest_command(
+    project: str = typer.Argument(..., help="Project name or path"),
+    workers: int | None = typer.Option(None, "--workers", min=1, help="Number of videos to process concurrently."),
+) -> None:
     try:
         service = ProjectService.load(project)
         with RichProgressReporter(console) as reporter:
-            result = VideoIngestionService(service.project_dir, service.config).run(progress=reporter)
+            result = VideoIngestionService(service.project_dir, service.config, workers_override=workers).run(progress=reporter)
     except (
         ProjectNotFoundError,
         InvalidConfigError,

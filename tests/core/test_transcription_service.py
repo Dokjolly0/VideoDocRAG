@@ -78,7 +78,7 @@ def _fake_results():
 
 
 def _stub_load_model(monkeypatch, fn=None):
-    def default(model_name):
+    def default(model_name, **kwargs):
         return object()
 
     monkeypatch.setattr(transcription_service_module, "load_whisper_model", fn or default)
@@ -160,7 +160,7 @@ def test_model_load_failure_raises_transcription_engine_error(tmp_path, monkeypa
     config = _config()
     _seed_video(project_dir, config)
 
-    def failing_load(model_name):
+    def failing_load(model_name, **kwargs):
         raise TranscriptionError("no network")
 
     _stub_load_model(monkeypatch, failing_load)

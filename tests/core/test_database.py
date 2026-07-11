@@ -1,5 +1,6 @@
 import contextlib
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -177,3 +178,15 @@ def test_replace_transcript_segments_wraps_sqlite_error(tmp_path):
     db_path.mkdir()
     with pytest.raises(DatabaseError):
         replace_transcript_segments(db_path, "demo", [_segment()])
+
+def test_concurrent_short_writes_do_not_raise_operational_error(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+
+    def write_one(i):
+        upsert_video(db_path, _row(id=f"video-{i:02d}", filename=f"Video {i}.mp4", file_hash=f"hash-{i}"))
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(write_one, range(24)))
+
+    assert len(list_videos(db_path)) == 24

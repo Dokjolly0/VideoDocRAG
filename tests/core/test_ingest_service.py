@@ -248,3 +248,43 @@ def test_hash_failure_reported_as_error_others_continue(tmp_path, monkeypatch):
     assert result.ingested == ("good",)
     assert len(result.errors) == 1
     assert "Bad.mp4" in result.errors[0]
+
+def test_same_run_collision_with_same_basename_in_different_folders_raises(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    first = project_dir / "videos" / "one" / "Demo.mp4"
+    second = project_dir / "videos" / "two" / "Demo.mp4"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    _available_ffprobe(monkeypatch)
+    _stub_probe(monkeypatch)
+
+    with pytest.raises(VideoIdCollisionError):
+        VideoIngestionService(project_dir, _config()).run()
+
+    assert get_video(project_dir / "project.db", "demo") is None
+
+
+def test_cross_run_collision_with_same_basename_different_folder_raises(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    first = project_dir / "videos" / "one" / "Demo.mp4"
+    first.parent.mkdir(parents=True)
+    first.write_bytes(b"one")
+    _available_ffprobe(monkeypatch)
+    _stub_probe(monkeypatch)
+    result1 = VideoIngestionService(project_dir, _config()).run()
+    assert result1.ingested == ("demo",)
+
+    first.unlink()
+    second = project_dir / "videos" / "two" / "Demo.mp4"
+    second.parent.mkdir(parents=True)
+    second.write_bytes(b"two")
+
+    with pytest.raises(VideoIdCollisionError):
+        VideoIngestionService(project_dir, _config()).run()
+
+    row = get_video(project_dir / "project.db", "demo")
+    assert row.path == first.resolve().as_posix()

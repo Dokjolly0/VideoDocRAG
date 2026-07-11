@@ -140,12 +140,39 @@ class EmbeddingSection(BaseModel):
     batch_size: int = Field(32, gt=0)
 
 
+class ConcurrencySection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    workers: int | Literal["auto"] = "auto"
+
+    @field_validator("workers")
+    @classmethod
+    def _workers_positive_or_auto(cls, v: int | Literal["auto"]) -> int | Literal["auto"]:
+        if v == "auto":
+            return v
+        if v <= 0:
+            raise ValueError("workers must be 'auto' or a positive integer")
+        return v
+
+
 class TranscriptionSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
     engine: str = "faster-whisper"
     model: str = "large-v3"
     language: str = "it"
     word_timestamps: bool = True
+    device: Literal["auto", "cpu", "cuda"] = "auto"
+    compute_type: str = "auto"
+    workers: int | Literal["auto"] = "auto"
+    cpu_threads: int | Literal["auto"] = "auto"
+
+    @field_validator("workers", "cpu_threads")
+    @classmethod
+    def _positive_or_auto(cls, v: int | Literal["auto"], info: ValidationInfo) -> int | Literal["auto"]:
+        if v == "auto":
+            return v
+        if v <= 0:
+            raise ValueError(f"{info.field_name} must be 'auto' or a positive integer")
+        return v
 
 
 class FramesSection(BaseModel):
@@ -249,6 +276,8 @@ class ProjectConfig(BaseModel):
     paths: PathsSection = Field(default_factory=PathsSection)
     llm: LLMSection = Field(default_factory=LLMSection)
     embedding: EmbeddingSection = Field(default_factory=EmbeddingSection)
+    ingest: ConcurrencySection = Field(default_factory=ConcurrencySection)
+    audio: ConcurrencySection = Field(default_factory=ConcurrencySection)
     transcription: TranscriptionSection = Field(default_factory=TranscriptionSection)
     frames: FramesSection = Field(default_factory=FramesSection)
     ocr: OCRSection = Field(default_factory=OCRSection)

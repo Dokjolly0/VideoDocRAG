@@ -306,3 +306,55 @@ def test_source_paths_accept_parent_traversal_inside_true_absolute(tmp_path, fie
     path = _write_config(tmp_path, field, "D:\\Corsi\\..\\OtherCorsi\\Workshop")
     config = ProjectConfig.load(path)
     assert getattr(config.paths, field) == "D:\\Corsi\\..\\OtherCorsi\\Workshop"
+
+def test_concurrency_and_transcription_runtime_defaults_roundtrip():
+    config = ProjectConfig.default(name="Demo", slug="demo")
+    assert config.ingest.workers == "auto"
+    assert config.audio.workers == "auto"
+    assert config.transcription.device == "auto"
+    assert config.transcription.compute_type == "auto"
+    assert config.transcription.workers == "auto"
+    assert config.transcription.cpu_threads == "auto"
+    reparsed = ProjectConfig.model_validate(yaml.safe_load(config.to_yaml()))
+    assert reparsed == config
+
+
+def test_concurrency_and_transcription_runtime_fields_accept_positive_ints(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        yaml.safe_dump({
+            "project": {"name": "Demo", "slug": "demo"},
+            "ingest": {"workers": 3},
+            "audio": {"workers": 4},
+            "transcription": {
+                "device": "cuda",
+                "compute_type": "float16",
+                "workers": 2,
+                "cpu_threads": 1,
+            },
+        }),
+        encoding="utf-8",
+    )
+    config = ProjectConfig.load(path)
+    assert config.ingest.workers == 3
+    assert config.audio.workers == 4
+    assert config.transcription.device == "cuda"
+    assert config.transcription.compute_type == "float16"
+    assert config.transcription.workers == 2
+    assert config.transcription.cpu_threads == 1
+
+
+@pytest.mark.parametrize("section,field", [
+    ("ingest", "workers"),
+    ("audio", "workers"),
+    ("transcription", "workers"),
+    ("transcription", "cpu_threads"),
+])
+def test_concurrency_fields_reject_non_positive_ints(tmp_path, section, field):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        yaml.safe_dump({"project": {"name": "Demo", "slug": "demo"}, section: {field: 0}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)

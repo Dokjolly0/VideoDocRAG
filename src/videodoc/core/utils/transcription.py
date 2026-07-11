@@ -26,7 +26,14 @@ class TranscriptSegmentResult:
     confidence: float | None
 
 
-def load_whisper_model(model_name: str) -> Any:
+def load_whisper_model(
+    model_name: str,
+    *,
+    device: str | None = None,
+    compute_type: str | None = None,
+    cpu_threads: int | None = None,
+    num_workers: int | None = None,
+) -> Any:
     """Lazily imports faster_whisper and instantiates WhisperModel(model_name).
 
     faster-whisper is a required dependency of this project (not an optional
@@ -44,8 +51,18 @@ def load_whisper_model(model_name: str) -> Any:
         from faster_whisper import WhisperModel
     except ImportError as exc:
         raise TranscriptionError(f"faster-whisper is not importable: {exc}") from exc
+    kwargs = {}
+    if device is not None:
+        kwargs["device"] = device
+    if compute_type is not None:
+        kwargs["compute_type"] = compute_type
+    if cpu_threads is not None:
+        kwargs["cpu_threads"] = cpu_threads
+    if num_workers is not None:
+        kwargs["num_workers"] = num_workers
+
     try:
-        return WhisperModel(model_name)
+        return WhisperModel(model_name, **kwargs)
     except Exception as exc:
         raise TranscriptionError(f"Could not load Whisper model '{model_name}': {exc}") from exc
 

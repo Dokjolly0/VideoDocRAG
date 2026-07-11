@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import threading
+from pathlib import Path
+
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TaskProgressColumn, TextColumn, TimeElapsedColumn
 
 from videodoc.core.utils.progress import ProgressReporter
 
 
 class RichProgressReporter(ProgressReporter):
-    """Context manager: an 'Overall' bar (video X/N) plus a bar for the
-    current file's own fraction, rendered on the same shared console as the
-    rest of the CLI's Rich output. transient=True erases both bars on exit
-    so the final summary table (printed right after) is all that's left
-    behind -- consistent with the log-like, no-permanent-noise style the
-    rest of cli/output.py already follows."""
+    """Context manager: an 'Overall' bar plus one bar for each active item.
+
+    The services may now call this from worker threads. Rich serializes its
+    rendering internally, while this class protects its own mapping/state so
+    item updates always hit the right task.
+    """
 
     def __init__(self, console: Console) -> None:
         self._progress = Progress(
@@ -24,48 +27,61 @@ class RichProgressReporter(ProgressReporter):
             console=console,
             transient=True,
         )
+        self._lock = threading.Lock()
         self._started = False
-        self._overall_task: int | None = None
-        self._item_task: int | None = None
+        self._overall_task: TaskID | None = None
+        self._item_tasks: dict[str, TaskID] = {}
 
     def __enter__(self) -> "RichProgressReporter":
         return self
 
     def __exit__(self, *exc_info: object) -> None:
-        if self._started:
-            self._progress.stop()
+        with self._lock:
+            if self._started:
+                self._progress.stop()
+                self._started = False
+                self._overall_task = None
+                self._item_tasks.clear()
 
     def start_item(self, item_id: str, index: int, total: int) -> None:
-        if not self._started:
-            # Started lazily here, not in __enter__: a service can do
-            # meaningful work before its first item (e.g. TranscriptionService
-            # loading the whisper model, which on first use downloads
-            # multiple GB via huggingface_hub's own tqdm progress bar).
-            # Progress.start() redirects stdout/stderr so our bars render
-            # cleanly -- but that redirect breaks tqdm's \r-based in-place
-            # updates, making a real, in-progress download look frozen.
-            # Deferring start() until there's actually a bar to show keeps
-            # that earlier output untouched.
-            self._progress.start()
-            self._started = True
-        if self._overall_task is None:
-            self._overall_task = self._progress.add_task("Overall", total=total)
-        self._item_task = self._progress.add_task(item_id, total=1.0)
+        del index  # The overall bar is completion-count based under concurrency.
+        with self._lock:
+            if not self._started:
+                # Started lazily here, not in __enter__: a service can do
+                # meaningful work before its first item (e.g. TranscriptionService
+                # loading the whisper model, which on first use downloads
+                # multiple GB via huggingface_hub's own tqdm progress bar).
+                self._progress.start()
+                self._started = True
+            if self._overall_task is None:
+                self._overall_task = self._progress.add_task("Overall", total=total)
+            old_task = self._item_tasks.pop(item_id, None)
+            if old_task is not None:
+                self._progress.remove_task(old_task)
+            self._item_tasks[item_id] = self._progress.add_task(_display_label(item_id), total=1.0)
 
     def update_item(self, item_id: str, fraction: float) -> None:
-        if self._item_task is not None:
-            self._progress.update(self._item_task, completed=fraction)
+        with self._lock:
+            task_id = self._item_tasks.get(item_id)
+            if task_id is not None:
+                self._progress.update(task_id, completed=max(0.0, min(1.0, fraction)))
 
     def finish_item(self, item_id: str) -> None:
-        if self._item_task is not None:
-            self._progress.remove_task(self._item_task)
-            self._item_task = None
-        if self._overall_task is not None:
-            self._progress.advance(self._overall_task, 1)
+        with self._lock:
+            task_id = self._item_tasks.pop(item_id, None)
+            if task_id is None:
+                return
+            self._progress.remove_task(task_id)
+            if self._overall_task is not None:
+                self._progress.advance(self._overall_task, 1)
 
     def announce(self, message: str) -> None:
         # Printed through self._progress.console (not a bare print()) so it
-        # interleaves correctly with the bars once the Live display is
-        # running -- and prints as a completely normal line before that,
-        # since Live hasn't started yet at this point (see start_item).
-        self._progress.console.print(message)
+        # interleaves correctly with the bars once the Live display is running.
+        with self._lock:
+            self._progress.console.print(message)
+
+
+def _display_label(item_id: str) -> str:
+    path = Path(item_id)
+    return path.name or item_id

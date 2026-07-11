@@ -42,7 +42,7 @@ def _fake_results():
 
 
 def _stub_transcription(monkeypatch, fn=None):
-    monkeypatch.setattr(transcription_service_module, "load_whisper_model", lambda model_name: object())
+    monkeypatch.setattr(transcription_service_module, "load_whisper_model", lambda model_name, **kwargs: object())
 
     def default(model, audio_path, *, language, word_timestamps, progress_callback=None):
         return _fake_results()
@@ -127,3 +127,25 @@ def test_transcribe_rerun_shows_all_skipped(tmp_path, monkeypatch):
     assert "Skipped" in result.stdout
     skipped_line = next(line for line in result.stdout.splitlines() if "Skipped" in line)
     assert "1" in skipped_line
+
+def test_transcribe_workers_and_device_flags_reach_model_loader(tmp_path, monkeypatch):
+    _ingest_one_video(tmp_path)
+    _ingest_via_cli(monkeypatch, "demo")
+    _extract_audio_via_cli(monkeypatch, "demo")
+
+    captured = {}
+
+    def load_model(model_name, **kwargs):
+        captured["model_name"] = model_name
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(transcription_service_module, "load_whisper_model", load_model)
+    monkeypatch.setattr(transcription_service_module, "transcribe_audio", lambda model, audio_path, **kwargs: _fake_results())
+
+    result = runner.invoke(app, ["transcribe", "demo", "--workers", "1", "--device", "cpu"])
+
+    assert result.exit_code == 0
+    assert captured["model_name"] == "large-v3"
+    assert captured["kwargs"]["device"] == "cpu"
+    assert captured["kwargs"]["num_workers"] == 1

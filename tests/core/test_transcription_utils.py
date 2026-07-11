@@ -166,3 +166,21 @@ def test_transcribe_audio_progress_callback_not_required(tmp_path):
 
     assert fractions == []
     assert len(results) == 1
+
+def test_load_whisper_model_passes_runtime_kwargs(monkeypatch):
+    captured = {}
+
+    class FakeModel:
+        def __init__(self, name, **kwargs):
+            captured["name"] = name
+            captured["kwargs"] = kwargs
+
+    _install_fake_faster_whisper(monkeypatch, FakeModel)
+
+    model = load_whisper_model("tiny", device="cpu", compute_type="int8", cpu_threads=2, num_workers=3)
+
+    assert isinstance(model, FakeModel)
+    assert captured == {
+        "name": "tiny",
+        "kwargs": {"device": "cpu", "compute_type": "int8", "cpu_threads": 2, "num_workers": 3},
+    }

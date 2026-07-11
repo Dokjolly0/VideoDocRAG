@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Literal
 
 from videodoc.core.config import ProjectConfig
 from videodoc.core.errors import (
@@ -14,9 +16,16 @@ from videodoc.core.errors import (
 from videodoc.core.models.transcript import Transcript, TranscriptSegment
 from videodoc.core.models.video_metadata import VideoMetadata
 from videodoc.core.storage import filesystem
-from videodoc.core.storage.database import TranscriptSegmentRow, ensure_schema, list_videos, replace_transcript_segments
+from videodoc.core.storage.database import TranscriptSegmentRow, VideoRow, ensure_schema, list_videos, replace_transcript_segments
+from videodoc.core.utils.hardware import (
+    resolve_compute_type,
+    resolve_cpu_threads,
+    resolve_device,
+    resolve_executor_workers,
+    resolve_transcription_workers,
+)
 from videodoc.core.utils.progress import ProgressReporter
-from videodoc.core.utils.transcription import TranscriptionError, load_whisper_model, transcribe_audio
+from videodoc.core.utils.transcription import TranscriptionError, TranscriptSegmentResult, load_whisper_model, transcribe_audio
 
 _SUPPORTED_ENGINES = ("faster-whisper",)
 
@@ -28,10 +37,32 @@ class TranscriptionResult:
     errors: tuple[str, ...]  # per-video transcription, DB, or metadata.json-update failures
 
 
+@dataclass(frozen=True)
+class _TranscriptionWorkItem:
+    index: int
+    row: VideoRow
+
+
+@dataclass(frozen=True)
+class _FreshTranscriptionOutcome:
+    row: VideoRow
+    segments: tuple[TranscriptSegment, ...] = ()
+    error: str | None = None
+
+
 class TranscriptionService:
-    def __init__(self, project_dir: Path, config: ProjectConfig) -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        config: ProjectConfig,
+        *,
+        workers_override: int | None = None,
+        device_override: Literal["auto", "cpu", "cuda"] | None = None,
+    ) -> None:
         self.project_dir = project_dir
         self.config = config
+        self.workers_override = workers_override
+        self.device_override = device_override
 
     def run(self, progress: ProgressReporter | None = None) -> TranscriptionResult:
         progress = progress or ProgressReporter()
@@ -78,16 +109,40 @@ class TranscriptionService:
         # "no such table: transcript_segments" and never self-heals.
         ensure_schema(db_path)
 
-        # Determined up front so the (expensive, possibly multi-GB-download)
-        # model is loaded only if at least one candidate actually needs
-        # fresh transcription -- a fully-skipped rerun never pays that cost.
-        needs_transcription = [
-            row for row in candidates
-            if not (self.project_dir / self.config.paths.workdir / row.id / "transcript" / f"{row.id}.json").is_file()
-        ]
+        transcribed: list[str] = []
+        skipped: list[str] = []
+        fresh_items: list[_TranscriptionWorkItem] = []
 
-        model = None
-        if needs_transcription:
+        ordered_candidates = sorted(candidates, key=lambda r: r.id)
+        total = len(ordered_candidates)
+        for index, row in enumerate(ordered_candidates):
+            transcript_rel = Path(self.config.paths.workdir) / row.id / "transcript" / f"{row.id}.json"
+            final_path = self.project_dir / transcript_rel
+            if final_path.is_file():
+                skipped_ok, error = self._process_existing_transcript(row, transcript_rel, index, total, db_path, progress)
+                if skipped_ok:
+                    skipped.append(row.id)
+                elif error is not None:
+                    errors.append(error)
+            else:
+                fresh_items.append(_TranscriptionWorkItem(index, row))
+
+        if fresh_items:
+            device = resolve_device(self.config.transcription.device, self.device_override)
+            compute_type = resolve_compute_type(self.config.transcription.compute_type, device)
+            configured_workers = resolve_transcription_workers(
+                self.config.transcription.workers,
+                self.workers_override,
+                device=device,
+            )
+            executor_workers = resolve_executor_workers(configured_workers, len(fresh_items))
+            cpu_threads = resolve_cpu_threads(
+                self.config.transcription.cpu_threads,
+                None,
+                device=device,
+                workers=executor_workers,
+            )
+
             # faster-whisper deliberately disables its own download progress
             # bar (see faster_whisper.utils.download_model's tqdm_class=
             # disabled_tqdm) -- on a first-time, multi-GB model download this
@@ -95,101 +150,127 @@ class TranscriptionService:
             # mistaken for a hang. This is the only feedback available short
             # of reimplementing huggingface_hub's download ourselves.
             progress.announce(
-                f"Loading transcription model '{self.config.transcription.model}' -- first use may "
-                f"download several GB from Hugging Face and show no progress while doing so."
+                f"Loading transcription model '{self.config.transcription.model}' "
+                f"(device={device}, compute_type={compute_type}, workers={executor_workers}, "
+                f"cpu_threads={cpu_threads}) -- first use may download several GB from Hugging Face "
+                f"and show no progress while doing so."
             )
             try:
-                model = load_whisper_model(self.config.transcription.model)
+                model = load_whisper_model(
+                    self.config.transcription.model,
+                    device=device,
+                    compute_type=compute_type,
+                    cpu_threads=cpu_threads,
+                    num_workers=executor_workers,
+                )
             except TranscriptionError as exc:
                 raise TranscriptionEngineError(
                     f"Could not load transcription engine (model '{self.config.transcription.model}'): {exc}"
                 ) from exc
 
-        transcribed: list[str] = []
-        skipped: list[str] = []
-
-        ordered_candidates = sorted(candidates, key=lambda r: r.id)
-        total = len(ordered_candidates)
-        for index, row in enumerate(ordered_candidates):
-            progress.start_item(row.id, index, total)
-            try:
-                video_dir = self.project_dir / self.config.paths.workdir / row.id
-                filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
-
-                transcript_rel = Path(self.config.paths.workdir) / row.id / "transcript" / f"{row.id}.json"
-                final_path = self.project_dir / transcript_rel
-
-                if final_path.is_file():
-                    # Already transcribed in a previous run -- the engine is
-                    # never re-invoked, but the DB rows are always rewritten
-                    # from the on-disk JSON (cheap DELETE+INSERT), so a prior
-                    # transient DB failure self-heals instead of staying
-                    # silently empty forever once the JSON file exists.
-                    try:
-                        transcript = Transcript.load(final_path)
-                    except InvalidTranscriptError as exc:
-                        errors.append(f"{row.id}: transcript already exists but could not be read: {exc}")
+            with ThreadPoolExecutor(max_workers=executor_workers) as executor:
+                futures = [executor.submit(self._transcribe_fresh, item, total, progress, model) for item in fresh_items]
+                for future in futures:
+                    outcome = future.result()
+                    if outcome.error is not None:
+                        errors.append(outcome.error)
                         continue
-                    try:
-                        replace_transcript_segments(db_path, row.id, _to_rows(row.id, transcript.segments))
-                    except DatabaseError as exc:
-                        errors.append(f"{row.id}: transcript already exists but database could not be updated: {exc}")
-                        continue
-                    if self._reconcile_metadata(video_dir, transcript_rel):
-                        skipped.append(row.id)
+                    error = self._commit_fresh_transcript(db_path, outcome)
+                    if error is None:
+                        transcribed.append(outcome.row.id)
                     else:
-                        errors.append(f"{row.id}: transcript already exists but metadata.json could not be updated")
-                    continue
-
-                audio_path = video_dir / "audio" / f"{row.id}.wav"
-                try:
-                    results = transcribe_audio(
-                        model, audio_path,
-                        language=self.config.transcription.language,
-                        word_timestamps=self.config.transcription.word_timestamps,
-                        progress_callback=lambda fraction, video_id=row.id: progress.update_item(video_id, fraction),
-                    )
-                except TranscriptionError as exc:
-                    errors.append(f"{row.id}: {exc}")
-                    continue
-
-                segments = [
-                    TranscriptSegment(
-                        id=f"{row.id}_seg_{i:04d}", start_seconds=r.start_seconds, end_seconds=r.end_seconds,
-                        text=r.text, confidence=r.confidence,
-                    )
-                    for i, r in enumerate(results)
-                ]
-                transcript = Transcript(
-                    video_id=row.id, engine=engine, model=self.config.transcription.model,
-                    language=self.config.transcription.language, segments=segments,
-                )
-
-                tmp_path = final_path.parent / f"{final_path.name}.tmp"
-                try:
-                    transcript.save(tmp_path)
-                    tmp_path.replace(final_path)
-                except OSError as exc:
-                    errors.append(f"{row.id}: could not finalize transcript file: {exc}")
-                    tmp_path.unlink(missing_ok=True)
-                    continue
-
-                try:
-                    replace_transcript_segments(db_path, row.id, _to_rows(row.id, segments))
-                except DatabaseError as exc:
-                    errors.append(f"{row.id}: transcript saved to {final_path.name} but database update failed: {exc}")
-                    continue
-
-                if self._reconcile_metadata(video_dir, transcript_rel):
-                    transcribed.append(row.id)
-                else:
-                    errors.append(
-                        f"{row.id}: transcript saved to {final_path.name} but metadata.json could not be updated"
-                    )
-            finally:
-                progress.finish_item(row.id)
+                        errors.append(error)
 
         return TranscriptionResult(tuple(transcribed), tuple(skipped), tuple(errors))
+
+    def _process_existing_transcript(
+        self,
+        row: VideoRow,
+        transcript_rel: Path,
+        index: int,
+        total: int,
+        db_path: Path,
+        progress: ProgressReporter,
+    ) -> tuple[bool, str | None]:
+        progress.start_item(row.id, index, total)
+        try:
+            video_dir = self.project_dir / self.config.paths.workdir / row.id
+            filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
+            final_path = self.project_dir / transcript_rel
+
+            # Already transcribed in a previous run -- the engine is never
+            # re-invoked, but the DB rows are always rewritten from the
+            # on-disk JSON (cheap DELETE+INSERT), so a prior transient DB
+            # failure self-heals instead of staying silently empty forever
+            # once the JSON file exists.
+            try:
+                transcript = Transcript.load(final_path)
+            except InvalidTranscriptError as exc:
+                return False, f"{row.id}: transcript already exists but could not be read: {exc}"
+            try:
+                replace_transcript_segments(db_path, row.id, _to_rows(row.id, transcript.segments))
+            except DatabaseError as exc:
+                return False, f"{row.id}: transcript already exists but database could not be updated: {exc}"
+            if self._reconcile_metadata(video_dir, transcript_rel):
+                return True, None
+            return False, f"{row.id}: transcript already exists but metadata.json could not be updated"
+        finally:
+            progress.finish_item(row.id)
+
+    def _transcribe_fresh(
+        self,
+        item: _TranscriptionWorkItem,
+        total: int,
+        progress: ProgressReporter,
+        model: Any,
+    ) -> _FreshTranscriptionOutcome:
+        row = item.row
+        progress.start_item(row.id, item.index, total)
+        try:
+            video_dir = self.project_dir / self.config.paths.workdir / row.id
+            filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
+            audio_path = video_dir / "audio" / f"{row.id}.wav"
+            try:
+                results = transcribe_audio(
+                    model, audio_path,
+                    language=self.config.transcription.language,
+                    word_timestamps=self.config.transcription.word_timestamps,
+                    progress_callback=lambda fraction, video_id=row.id: progress.update_item(video_id, fraction),
+                )
+            except TranscriptionError as exc:
+                return _FreshTranscriptionOutcome(row, error=f"{row.id}: {exc}")
+
+            segments = tuple(_to_segments(row.id, results))
+            return _FreshTranscriptionOutcome(row, segments=segments)
+        finally:
+            progress.finish_item(row.id)
+
+    def _commit_fresh_transcript(self, db_path: Path, outcome: _FreshTranscriptionOutcome) -> str | None:
+        row = outcome.row
+        video_dir = self.project_dir / self.config.paths.workdir / row.id
+        transcript_rel = Path(self.config.paths.workdir) / row.id / "transcript" / f"{row.id}.json"
+        final_path = self.project_dir / transcript_rel
+        transcript = Transcript(
+            video_id=row.id, engine=self.config.transcription.engine, model=self.config.transcription.model,
+            language=self.config.transcription.language, segments=list(outcome.segments),
+        )
+
+        tmp_path = final_path.parent / f"{final_path.name}.tmp"
+        try:
+            transcript.save(tmp_path)
+            tmp_path.replace(final_path)
+        except OSError as exc:
+            tmp_path.unlink(missing_ok=True)
+            return f"{row.id}: could not finalize transcript file: {exc}"
+
+        try:
+            replace_transcript_segments(db_path, row.id, _to_rows(row.id, list(outcome.segments)))
+        except DatabaseError as exc:
+            return f"{row.id}: transcript saved to {final_path.name} but database update failed: {exc}"
+
+        if self._reconcile_metadata(video_dir, transcript_rel):
+            return None
+        return f"{row.id}: transcript saved to {final_path.name} but metadata.json could not be updated"
 
     def _reconcile_metadata(self, video_dir: Path, transcript_rel: Path) -> bool:
         """Ensure metadata.json's transcript_path points at the concrete
@@ -213,6 +294,16 @@ class TranscriptionService:
         except OSError:
             return False
         return True
+
+
+def _to_segments(video_id: str, results: list[TranscriptSegmentResult]) -> list[TranscriptSegment]:
+    return [
+        TranscriptSegment(
+            id=f"{video_id}_seg_{i:04d}", start_seconds=r.start_seconds, end_seconds=r.end_seconds,
+            text=r.text, confidence=r.confidence,
+        )
+        for i, r in enumerate(results)
+    ]
 
 
 def _to_rows(video_id: str, segments: list[TranscriptSegment]) -> list[TranscriptSegmentRow]:

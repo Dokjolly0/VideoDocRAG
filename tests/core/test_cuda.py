@@ -3,7 +3,7 @@ import types
 
 import pytest
 
-from videodoc.core.utils.cuda import CudaProbeError, get_cuda_device_count, probe_cublas_loadable
+from videodoc.core.utils.cuda import CudaProbeError, cuda_is_usable, get_cuda_device_count, probe_cublas_loadable
 
 
 def test_get_cuda_device_count_success(monkeypatch):
@@ -64,3 +64,22 @@ def test_probe_cublas_loadable_passes_winmode_zero(monkeypatch):
     monkeypatch.setattr(cuda_module.ctypes, "CDLL", fake_cdll)
     probe_cublas_loadable("cublas64_12.dll")
     assert captured["kwargs"] == {"winmode": 0}
+
+def test_cuda_is_usable_requires_device_and_cublas(monkeypatch):
+    import videodoc.core.utils.cuda as cuda_module
+
+    monkeypatch.setattr(cuda_module, "get_cuda_device_count", lambda: 1)
+    monkeypatch.setattr(cuda_module, "probe_cublas_loadable", lambda name: None)
+    assert cuda_is_usable("Windows") is True
+
+
+def test_cuda_is_usable_false_when_device_probe_or_cublas_fails(monkeypatch):
+    import videodoc.core.utils.cuda as cuda_module
+
+    monkeypatch.setattr(cuda_module, "get_cuda_device_count", lambda: 0)
+    assert cuda_is_usable("Windows") is False
+
+    monkeypatch.setattr(cuda_module, "get_cuda_device_count", lambda: 1)
+    monkeypatch.setattr(cuda_module, "probe_cublas_loadable", lambda name: (_ for _ in ()).throw(CudaProbeError("boom")))
+    assert cuda_is_usable("Windows") is False
+    assert cuda_is_usable("Darwin") is False

@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
 """
 
 
+def _connect(db_path: Path) -> sqlite3.Connection:
+    return sqlite3.connect(db_path, timeout=30)
+
+
 @dataclass(frozen=True)
 class VideoRow:
     id: str
@@ -69,7 +73,8 @@ def ensure_schema(db_path: Path) -> None:
         # (a well-known stdlib gotcha). closing(...) is what actually
         # releases the file handle; chaining ", conn" keeps the
         # commit-on-success/rollback-on-error behavior on top of that.
-        with closing(sqlite3.connect(db_path)) as conn, conn:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(_CREATE_VIDEOS_TABLE)
             conn.execute(_CREATE_TRANSCRIPT_SEGMENTS_TABLE)
     except sqlite3.Error as exc:
@@ -78,7 +83,7 @@ def ensure_schema(db_path: Path) -> None:
 
 def get_video(db_path: Path, video_id: str) -> VideoRow | None:
     try:
-        with closing(sqlite3.connect(db_path)) as conn, conn:
+        with closing(_connect(db_path)) as conn, conn:
             row = conn.execute(
                 "SELECT id, filename, title, duration_seconds, file_hash, path, created_at "
                 "FROM videos WHERE id = ?",
@@ -100,7 +105,7 @@ def list_videos(db_path: Path) -> list[VideoRow]:
     which the caller is expected to treat as NoVideosFoundError, not as a
     structural database problem."""
     try:
-        with closing(sqlite3.connect(db_path)) as conn, conn:
+        with closing(_connect(db_path)) as conn, conn:
             table_exists = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='videos'"
             ).fetchone()
@@ -121,7 +126,7 @@ def upsert_video(db_path: Path, row: VideoRow) -> None:
     # a title set elsewhere in the pipeline, nor overwrite the video's
     # original first-ingested timestamp with the reprocessing time.
     try:
-        with closing(sqlite3.connect(db_path)) as conn, conn:
+        with closing(_connect(db_path)) as conn, conn:
             conn.execute(
                 """
                 INSERT INTO videos (id, filename, title, duration_seconds, file_hash, path, created_at)
@@ -158,7 +163,7 @@ def replace_transcript_segments(db_path: Path, video_id: str, segments: list[Tra
     prior transient DB failure self-heal instead of staying silently
     empty forever once the transcript JSON file already exists."""
     try:
-        with closing(sqlite3.connect(db_path)) as conn, conn:
+        with closing(_connect(db_path)) as conn, conn:
             conn.execute("DELETE FROM transcript_segments WHERE video_id = ?", (video_id,))
             conn.executemany(
                 "INSERT INTO transcript_segments (id, video_id, start_seconds, end_seconds, text, confidence) "

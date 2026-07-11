@@ -11,7 +11,7 @@ from typing import Literal
 
 from videodoc.core.services.project_service import HOME_ENV_VAR, default_projects_home
 from videodoc.core.services.registry_service import DATA_DIR_ENV_VAR, ProjectRegistry
-from videodoc.core.utils.cuda import CudaProbeError, get_cuda_device_count, probe_cublas_loadable
+from videodoc.core.utils.cuda import CUBLAS_LIBRARY_NAMES, CudaProbeError, get_cuda_device_count, probe_cublas_loadable
 
 _MIN_PYTHON = (3, 11)
 
@@ -24,14 +24,6 @@ _FFMPEG_FIX_COMMANDS: dict[str, tuple[str, ...]] = {
     "Darwin": ("brew", "install", "ffmpeg"),
 }
 
-# CUDA 12.x-specific shared library names -- matches the exact library named
-# in the real "cublas64_12.dll is not found or cannot be loaded" error this
-# check exists to catch. Not applicable on macOS (no NVIDIA CUDA support on
-# modern hardware) or on an OS this dict doesn't recognize.
-_CUBLAS_LIBRARY_NAMES: dict[str, str] = {
-    "Windows": "cublas64_12.dll",
-    "Linux": "libcublas.so.12",
-}
 
 _CUBLAS_PIP_FIX: tuple[str, ...] = (sys.executable, "-m", "pip", "install", "nvidia-cublas-cu12", "nvidia-cudnn-cu12")
 
@@ -148,7 +140,7 @@ class DoctorService:
         if self._platform_name == "Darwin":
             return CheckResult("cuda", "GPU / CUDA", "ok", "CUDA device reported, but macOS has no NVIDIA CUDA support -- CPU will be used")
 
-        library_name = _CUBLAS_LIBRARY_NAMES.get(self._platform_name)
+        library_name = CUBLAS_LIBRARY_NAMES.get(self._platform_name)
         if library_name is None:
             return CheckResult("cuda", "GPU / CUDA", "ok", f"{device_count} CUDA device(s) detected (cuBLAS not checked on this OS)")
 
