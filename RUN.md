@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`; Step 4: estrazione audio — `extract-audio`; Step 5: trascrizione audio — `transcribe`) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`; Step 4: estrazione audio — `extract-audio`; Step 5: trascrizione audio — `transcribe`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -390,6 +390,45 @@ Transcribed: 0, skipped (already transcribed): 8
 
 Se nessun video ha ancora l'audio estratto (`extract-audio` non è mai stato eseguito), il comando fallisce subito (`exit code` 1) senza caricare alcun modello. Un problema di trascrizione su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0 — vedi §8 per un caso reale (libreria CUDA mancante) riscontrato durante lo sviluppo.
 
+### 5.10 Verificare lo stato dell'ambiente (`doctor`)
+
+Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
+
+```bash
+videodoc doctor
+```
+
+```text
+Python version: 3.13.14 (>= 3.11 required)
+FFmpeg (ffprobe + ffmpeg): both found on PATH
+faster-whisper: importable
+GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+Project registry: 3 project(s) registered -- ...
+Default projects folder: ... is writable (default location)
+6 OK, 0 warning(s), 0 error(s).
+```
+
+`exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
+
+### 5.11 Applicare le correzioni automaticamente (`setup`)
+
+Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
+
+```bash
+videodoc setup
+```
+
+```text
+Warning: GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
+  Applying fix for 'GPU / CUDA': <venv>\Scripts\python.exe -m pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+  Applied: Successfully installed nvidia-cublas-cu12-... nvidia-cudnn-cu12-...
+  On Windows the pip packages alone are not enough -- also add ... to PATH for the session (see RUN.md §8).
+Re-checking automatically-fixed items...
+GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+```
+
+Le correzioni di sistema riuscite non vengono ri-verificate nello stesso processo (il `PATH` del processo già in esecuzione non si aggiorna) — solo le correzioni pip lo sono, per questo la sezione finale "Re-checking..." appare solo quando è stata applicata almeno una correzione pip.
+
 ## 6. Personalizzare i percorsi (variabili d'ambiente)
 
 Due variabili d'ambiente permettono di controllare dove VideoDocRAG legge/scrive i propri dati, utili per test, ambienti sandbox o setup non standard:
@@ -500,11 +539,13 @@ Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.all
 FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
 
 **`videodoc transcribe` fallisce con un errore che menziona `cublas` o una libreria CUDA mancante.**
+Esegui prima `videodoc doctor` (§5.10): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.11) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
+
 `faster-whisper` rileva automaticamente l'hardware disponibile e, su una macchina dove viene individuata una GPU ma mancano le librerie runtime CUDA (es. `cublas64_12.dll` su Windows), fallisce invece di ripiegare in modo pulito sulla CPU. **Dove esattamente fallisce cambia il comportamento del comando**, e dipende da un dettaglio interno di `faster-whisper`/`ctranslate2` non controllabile da questo codice:
 - Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.
 - Se invece il problema impedisce già il caricamento del modello stesso (`WhisperModel(...)`) — è strutturale, non recuperabile per l'intero run: il comando fallisce con `Error: Could not load transcription engine ...` ed `exit code` `1`, senza processare alcun video.
 
-Non esiste ancora un'opzione di configurazione per forzare esplicitamente l'esecuzione su CPU (`config.transcription` non ha un campo `device`/`compute_type`); se hai una GPU NVIDIA reale e vuoi effettivamente usarla, puoi installare le librerie runtime CUDA come pacchetti pip puri, senza installare l'intero CUDA Toolkit di sistema:
+Non esiste ancora un'opzione di configurazione per forzare esplicitamente l'esecuzione su CPU (`config.transcription` non ha un campo `device`/`compute_type`); se hai una GPU NVIDIA reale e vuoi effettivamente usarla, puoi installare le librerie runtime CUDA come pacchetti pip puri, senza installare l'intero CUDA Toolkit di sistema (`videodoc setup` fa esattamente questo passaggio in automatico):
 
 ```powershell
 pip install nvidia-cublas-cu12 nvidia-cudnn-cu12

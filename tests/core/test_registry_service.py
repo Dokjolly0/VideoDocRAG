@@ -148,3 +148,45 @@ def test_register_heals_a_malformed_existing_entry(tmp_path):
     entry = registry.register("demo", target)
     assert entry.path == target.resolve()
     assert registry.resolve("demo") == target.resolve()
+
+
+def test_last_load_was_corrupted_false_after_clean_load(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    registry = ProjectRegistry(registry_path)
+    registry.list_all()
+    assert registry.last_load_was_corrupted is False
+
+
+def test_last_load_was_corrupted_true_immediately_after_quarantine(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text("not valid json", encoding="utf-8")
+    registry = ProjectRegistry(registry_path)
+
+    registry.list_all()
+    assert registry.last_load_was_corrupted is True
+
+
+def test_last_load_was_corrupted_resets_on_next_clean_load(tmp_path):
+    """A registry that was corrupted (and quarantined into an empty state)
+    must report last_load_was_corrupted as False again on a subsequent
+    load of that now-healthy empty state -- the flag reflects the most
+    recent load, not 'was ever corrupted'."""
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text("not valid json", encoding="utf-8")
+    registry = ProjectRegistry(registry_path)
+
+    registry.list_all()
+    assert registry.last_load_was_corrupted is True
+
+    registry.list_all()
+    assert registry.last_load_was_corrupted is False
+
+
+def test_registry_path_reflects_explicit_path(tmp_path):
+    registry_path = tmp_path / "custom-registry.json"
+    assert ProjectRegistry(registry_path).registry_path == registry_path
+
+
+def test_registry_path_falls_back_to_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("VIDEODOC_DATA_DIR", str(tmp_path))
+    assert ProjectRegistry().registry_path == tmp_path / "registry.json"

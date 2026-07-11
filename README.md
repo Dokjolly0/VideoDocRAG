@@ -1062,6 +1062,8 @@ videodoc status <project_name>
 videodoc inspect <project_name> --timestamp 00:21:04
 ```
 
+Nota implementativa: oltre a questi comandi per-progetto, esistono anche `videodoc doctor` e `videodoc setup` — diagnostica e correzione guidata dell'ambiente (versione Python, FFmpeg, motore di trascrizione, GPU/CUDA), senza argomento progetto. Non fanno parte della pipeline sopra; vedi `RUN.md` e `docs/commands.md`.
+
 ## 12.2 Comando status
 
 Mostra lo stato del progetto:

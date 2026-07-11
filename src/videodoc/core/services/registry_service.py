@@ -28,6 +28,22 @@ class ProjectEntry:
 class ProjectRegistry:
     def __init__(self, registry_path: Path | None = None) -> None:
         self._registry_path = registry_path or self.default_path()
+        self._last_load_was_corrupted = False
+
+    @property
+    def last_load_was_corrupted(self) -> bool:
+        """True iff the most recent _load() call found a corrupted registry
+        file and quarantined it (see _quarantine_corrupted_file), starting
+        from an empty registry instead. Exists so callers like doctor's
+        registry health check can report this without reimplementing
+        registry.json parsing themselves."""
+        return self._last_load_was_corrupted
+
+    @property
+    def registry_path(self) -> Path:
+        """The actual registry.json path this instance reads/writes (either
+        the explicit path passed to __init__, or default_path())."""
+        return self._registry_path
 
     @staticmethod
     def default_path() -> Path:
@@ -43,6 +59,7 @@ class ProjectRegistry:
         return base / REGISTRY_FILENAME
 
     def _load(self) -> dict:
+        self._last_load_was_corrupted = False
         if not self._registry_path.exists():
             return {"version": REGISTRY_VERSION, "projects": {}}
         try:
@@ -55,6 +72,7 @@ class ProjectRegistry:
             return {"version": REGISTRY_VERSION, "projects": {}}
 
     def _quarantine_corrupted_file(self, exc: Exception) -> None:
+        self._last_load_was_corrupted = True
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
         backup = self._registry_path.with_name(f"{self._registry_path.name}.corrupted-{ts}")
         try:

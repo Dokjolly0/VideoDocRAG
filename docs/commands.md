@@ -172,3 +172,42 @@ Project: corso-software-x
 Transcribed: 0, skipped (already transcribed): 8
 ```
 **Vedi anche:** [features/transcription.md](features/transcription.md)
+
+---
+
+## doctor
+
+**Sintassi:** `videodoc doctor`
+**Descrizione:** Comando **machine-scoped** (nessun argomento progetto): verifica lo stato dell'ambiente — versione Python, FFmpeg (`ffprobe`+`ffmpeg`), `faster-whisper` importabile, GPU/CUDA (rilevamento device + caricabilità reale di `cublas`), salute del registro locale, scrivibilità della cartella progetti di default. Non modifica nulla, non scarica nulla, non richiede alcuna conferma.
+**Exit code:** 0 = nessun `error` (i `warning`, come un problema CUDA rilevabile ma non bloccante, non influenzano l'exit code). 1 = almeno un check in stato `error`.
+**Esempio:**
+```
+$ videodoc doctor
+Python version: 3.13.14 (>= 3.11 required)
+FFmpeg (ffprobe + ffmpeg): both found on PATH
+faster-whisper: importable
+GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+Project registry: 3 project(s) registered -- C:\Users\utente\AppData\Local\videodoc\registry.json (default location)
+Default projects folder: C:\Users\utente\VideoDocRAG\projects is writable (default location)
+6 OK, 0 warning(s), 0 error(s).
+```
+**Vedi anche:** [features/doctor-setup.md](features/doctor-setup.md)
+
+---
+
+## setup
+
+**Sintassi:** `videodoc setup`
+**Descrizione:** Comando **machine-scoped**: esegue gli stessi controlli di `doctor` e offre di correggere quanto non è `ok`. Le correzioni via pip (nel venv, reversibili — es. `nvidia-cublas-cu12`/`nvidia-cudnn-cu12`) vengono applicate **automaticamente senza conferma**. Le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite. Le correzioni puramente manuali (es. il passaggio di `PATH` per le DLL CUDA su Windows) vengono solo stampate, mai eseguite.
+**Exit code:** 0 = nessun check originariamente `error` resta irrisolto. 1 = almeno un check `error` non ha una correzione, la correzione è stata rifiutata, o il tentativo di correzione è fallito.
+**Esempio:**
+```
+$ videodoc setup
+Warning: GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
+  Applying fix for 'GPU / CUDA': <venv>\Scripts\python.exe -m pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+  Applied: Successfully installed nvidia-cublas-cu12-... nvidia-cudnn-cu12-...
+  On Windows the pip packages alone are not enough -- also add ... to PATH for the session (see RUN.md).
+Re-checking automatically-fixed items...
+GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+```
+**Vedi anche:** [features/doctor-setup.md](features/doctor-setup.md)

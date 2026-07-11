@@ -20,6 +20,15 @@ def print_warning(message: str) -> None:
     console.print(f"Warning: {message}", style="yellow")
 
 
+def print_check_error(message: str) -> None:
+    # stdout, not error_console: doctor/setup print multiple per-check lines
+    # that must stay interleaved together in one readable report, unlike
+    # every other command's single fatal "Error: ..." line printed right
+    # before typer.Exit(1) -- the exit code here is computed separately
+    # from DoctorResult.has_errors, not from this print call itself.
+    console.print(f"Error: {message}", style="bold red")
+
+
 def render_projects_table(entries: list[ProjectEntry]) -> None:
     table = Table(show_header=True, header_style="bold")
     table.add_column("Name")
