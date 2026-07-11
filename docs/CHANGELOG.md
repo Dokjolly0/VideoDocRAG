@@ -1,9 +1,12 @@
 # Changelog
 
 ## Unreleased — Transcription throughput optimization
-- Optimized `videodoc transcribe` for long CUDA workloads: `auto` now prefers batched faster-whisper inference on CUDA, `int8_float16`, one video worker, `batch_size: 8`, VAD, greedy decoding (`beam_size: 1`), and `word_timestamps: false` because word-level data is not persisted.
+- Optimized `videodoc transcribe` for long CUDA workloads: `auto` now prefers batched faster-whisper inference on CUDA, one video worker, VAD, greedy decoding (`beam_size: 1`), and `word_timestamps: false` because word-level data is not persisted.
+- Added GPU-aware CUDA planning from dedicated VRAM only: NVML via `nvidia-ml-py` with `nvidia-smi` fallback, dynamic `compute_type`/`batch_size`, and no use of Windows shared GPU memory for sizing.
+- Added CUDA OOM recovery: compute-type downgrade on model-load OOM, serial first-video pre-flight with batch halving/reload, and one half-batch retry for later videos.
 - Added transcription runtime config fields and CLI overrides: `device`, `compute_type`, `mode`, `workers`, `cpu_threads`, `batch_size`, `beam_size`, `best_of`, `vad_filter`, `chunk_length_seconds`, `condition_on_previous_text`, plus `--word-timestamps/--no-word-timestamps`.
-- Added tests for hardware resolution, batched pipeline wrapping, service-level CUDA auto runtime options, and CLI propagation.
+- Enriched `videodoc doctor` with detected GPU name, dedicated VRAM, compute capability, driver, probe source, and the resulting CUDA auto plan.
+- Added tests for GPU probing, hardware planning, batched pipeline wrapping, service-level CUDA auto/OOM runtime paths, doctor GPU reporting, and CLI propagation.
 
 ## Step 1 — Project management foundation
 - Added project initialization and a validated `config.yaml` schema — see [features/project-initialization.md](features/project-initialization.md)

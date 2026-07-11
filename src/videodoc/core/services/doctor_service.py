@@ -12,6 +12,8 @@ from typing import Literal
 from videodoc.core.services.project_service import HOME_ENV_VAR, default_projects_home
 from videodoc.core.services.registry_service import DATA_DIR_ENV_VAR, ProjectRegistry
 from videodoc.core.utils.cuda import CUBLAS_LIBRARY_NAMES, CudaProbeError, get_cuda_device_count, probe_cublas_loadable
+from videodoc.core.utils.gpu import GpuInfo, probe_gpu
+from videodoc.core.utils.hardware import plan_cuda_auto
 
 _MIN_PYTHON = (3, 11)
 
@@ -172,7 +174,9 @@ class DoctorService:
                 f"{device_count} CUDA device(s) detected but {library_name} could not be loaded: {exc}",
                 fix_kind="pip", fix_command=_CUBLAS_PIP_FIX, fix_description=fix_description,
             )
-        return CheckResult("cuda", "GPU / CUDA", "ok", f"{device_count} CUDA device(s) detected, {library_name} loadable")
+        gpu = probe_gpu()
+        detail = _format_gpu_detail(gpu)
+        return CheckResult("cuda", "GPU / CUDA", "ok", f"{device_count} CUDA device(s) detected, {library_name} loadable; {detail}")
 
     def _check_registry(self) -> CheckResult:
         entries = self._registry.list_all()
@@ -200,3 +204,16 @@ class DoctorService:
                 fix_description=f"Grant write permission to {ancestor}, or set VIDEODOC_HOME to a writable location.",
             )
         return CheckResult("projects_home", "Default projects folder", "ok", f"{self._projects_home} is writable ({source})")
+
+
+def _format_gpu_detail(gpu: GpuInfo | None) -> str:
+    plan = plan_cuda_auto(gpu)
+    if gpu is None:
+        return f"GPU details unavailable; auto plan uses conservative defaults: compute_type={plan.compute_type}, batch_size={plan.batch_size}"
+    capability = "unknown" if gpu.compute_capability is None else f"{gpu.compute_capability[0]}.{gpu.compute_capability[1]}"
+    driver = f", driver {gpu.driver_version}" if gpu.driver_version else ""
+    return (
+        f"{gpu.name}, {gpu.total_vram_mb} MiB dedicated total, {gpu.free_vram_mb} MiB dedicated free, "
+        f"CC {capability}{driver} (via {gpu.source}); auto plan: compute_type={plan.compute_type}, "
+        f"batch_size={plan.batch_size} ({plan.rationale})"
+    )

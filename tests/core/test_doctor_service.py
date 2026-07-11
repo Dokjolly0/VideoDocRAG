@@ -4,6 +4,7 @@ import videodoc.core.services.doctor_service as doctor_service_module
 from videodoc.core.services.doctor_service import DoctorService
 from videodoc.core.services.registry_service import ProjectRegistry
 from videodoc.core.utils.cuda import CudaProbeError
+from videodoc.core.utils.gpu import GpuInfo
 
 
 def _find(result, check_id):
@@ -105,10 +106,22 @@ def test_cuda_device_count_probe_failure_treated_as_zero(tmp_path, monkeypatch):
 
 
 def test_cuda_devices_present_and_cublas_loadable_is_ok(tmp_path, monkeypatch):
+    gpu = GpuInfo(
+        name="NVIDIA GeForce RTX 4070 Laptop GPU",
+        total_vram_mb=8188,
+        free_vram_mb=7301,
+        compute_capability=(8, 9),
+        driver_version="555.99",
+        source="nvml",
+    )
     monkeypatch.setattr(doctor_service_module, "get_cuda_device_count", lambda: 1)
     monkeypatch.setattr(doctor_service_module, "probe_cublas_loadable", lambda name: None)
+    monkeypatch.setattr(doctor_service_module, "probe_gpu", lambda: gpu)
     result = DoctorService(platform_name="Windows", registry=ProjectRegistry(tmp_path / "r.json"), projects_home=tmp_path).run()
-    assert _find(result, "cuda").status == "ok"
+    check = _find(result, "cuda")
+    assert check.status == "ok"
+    assert "7301 MiB dedicated free" in check.message
+    assert "batch_size=19" in check.message
 
 
 def test_cuda_devices_present_but_cublas_unloadable_is_warning_with_pip_fix_windows(tmp_path, monkeypatch):

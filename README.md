@@ -1449,6 +1449,8 @@ La trascrizione deve essere conservata in formato JSON, non solo TXT, perché i 
 
 Nota implementativa: lo schema realmente prodotto usa `start_seconds`/`end_seconds` (coerenti con lo schema SQL di `transcript_segments`, §31), non `start`/`end`, e ogni segmento include anche un `id` univoco nel progetto (`<video_id>_seg_NNNN`) e una `confidence`; il file JSON completo include inoltre `video_id`, `engine`, `model` e `language`. Salvato in `workdir/<video_id>/transcript/<video_id>.json` e registrato anche nella tabella `transcript_segments` di `project.db`.
 
+Nota performance: con `device`, `compute_type`, `mode` e `batch_size` su `auto`, la trascrizione usa CUDA quando disponibile, modalità batched e un planner basato solo sulla VRAM dedicata libera rilevata via NVML/`nvidia-smi`. La memoria GPU condivisa di Windows non viene conteggiata per dimensionare il batch. In caso di OOM CUDA, il servizio prova a ridurre il batch o a usare un compute type più leggero prima di segnalare l'errore del singolo video.
+
 ---
 
 # 18. Fase 5 — Estrazione frame e screenshot

@@ -152,6 +152,7 @@ def test_transcribe_runtime_flags_reach_model_loader_and_transcriber(tmp_path, m
     monkeypatch.setattr(transcription_service_module, "load_whisper_model", load_model)
     monkeypatch.setattr(transcription_service_module, "build_batched_pipeline", build_pipeline)
     monkeypatch.setattr(transcription_service_module, "transcribe_audio", fake_transcribe)
+    monkeypatch.setattr(transcription_service_module, "probe_gpu", lambda: None)
 
     result = runner.invoke(app, [
         "transcribe", "demo",

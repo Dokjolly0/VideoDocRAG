@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,7 +17,10 @@ from videodoc.core.models.transcript import Transcript, TranscriptSegment
 from videodoc.core.models.video_metadata import VideoMetadata
 from videodoc.core.storage import filesystem
 from videodoc.core.storage.database import TranscriptSegmentRow, VideoRow, ensure_schema, list_videos, replace_transcript_segments
+from videodoc.core.utils.gpu import GpuInfo, is_cuda_oom, probe_gpu
 from videodoc.core.utils.hardware import (
+    estimate_cuda_batch_size,
+    plan_cuda_auto,
     resolve_compute_type,
     resolve_cpu_threads,
     resolve_device,
@@ -36,6 +39,8 @@ from videodoc.core.utils.transcription import (
 )
 
 _SUPPORTED_ENGINES = ("faster-whisper",)
+_COMPUTE_DOWNGRADES = {"float16": "int8_float16", "bfloat16": "int8_float16", "int8_float16": "int8"}
+_OOM_HINT = "set transcription.batch_size / transcription.compute_type explicitly, or use --device cpu"
 
 
 @dataclass(frozen=True)
@@ -62,6 +67,7 @@ class _TranscriptionRuntime:
     vad_filter: bool
     chunk_length_seconds: int
     condition_on_previous_text: bool
+    compute_type: str
 
 
 @dataclass(frozen=True)
@@ -161,7 +167,20 @@ class TranscriptionService:
         if fresh_items:
             device = resolve_device(self.config.transcription.device, self.device_override)
             mode = resolve_transcription_mode(self.config.transcription.mode, self.mode_override, device=device)
-            compute_type = resolve_compute_type(self.config.transcription.compute_type, device, self.compute_type_override)
+            gpu = probe_gpu() if device == "cuda" else None
+            auto_compute = device == "cuda" and self.compute_type_override is None and self.config.transcription.compute_type == "auto"
+            auto_batch = (
+                device == "cuda"
+                and mode == "batched"
+                and self.batch_size_override is None
+                and self.config.transcription.batch_size == "auto"
+            )
+            compute_type = resolve_compute_type(
+                self.config.transcription.compute_type,
+                device,
+                self.compute_type_override,
+                gpu=gpu,
+            )
             configured_workers = resolve_transcription_workers(
                 self.config.transcription.workers,
                 self.workers_override,
@@ -180,6 +199,7 @@ class TranscriptionService:
                 self.batch_size_override,
                 device=device,
                 mode=mode,
+                gpu=gpu,
             )
             word_timestamps = (
                 self.word_timestamps_override
@@ -188,12 +208,80 @@ class TranscriptionService:
             )
             beam_size = self.beam_size_override or self.config.transcription.beam_size
 
-            # faster-whisper deliberately disables its own download progress
-            # bar (see faster_whisper.utils.download_model's tqdm_class=
-            # disabled_tqdm) -- on a first-time, multi-GB model download this
-            # call can block for minutes with zero output otherwise, easily
-            # mistaken for a hang. This is the only feedback available short
-            # of reimplementing huggingface_hub's download ourselves.
+            if device == "cuda":
+                progress.announce(_describe_cuda_plan(gpu, auto_compute=auto_compute, auto_batch=auto_batch))
+
+            runtime, compute_type, batch_size = self._load_runtime(
+                progress,
+                device=device,
+                mode=mode,
+                compute_type=compute_type,
+                batch_size=batch_size,
+                cpu_threads=cpu_threads,
+                executor_workers=executor_workers,
+                word_timestamps=word_timestamps,
+                beam_size=beam_size,
+                auto_compute=auto_compute,
+                auto_batch=auto_batch,
+                gpu=gpu,
+            )
+
+            first_item = fresh_items[0]
+            outcome, runtime, compute_type, batch_size = self._preflight_transcribe(
+                first_item,
+                total,
+                progress,
+                runtime,
+                device=device,
+                cpu_threads=cpu_threads,
+                executor_workers=executor_workers,
+                auto_compute=auto_compute,
+                auto_batch=auto_batch,
+                gpu=gpu,
+            )
+            if outcome.error is not None:
+                errors.append(outcome.error)
+            else:
+                error = self._commit_fresh_transcript(db_path, outcome)
+                if error is None:
+                    transcribed.append(outcome.row.id)
+                else:
+                    errors.append(error)
+
+            remaining_items = fresh_items[1:]
+            if remaining_items:
+                with ThreadPoolExecutor(max_workers=executor_workers) as executor:
+                    futures = [executor.submit(self._transcribe_fresh, item, total, progress, runtime) for item in remaining_items]
+                    for future in futures:
+                        outcome = future.result()
+                        if outcome.error is not None:
+                            errors.append(outcome.error)
+                            continue
+                        error = self._commit_fresh_transcript(db_path, outcome)
+                        if error is None:
+                            transcribed.append(outcome.row.id)
+                        else:
+                            errors.append(error)
+
+        return TranscriptionResult(tuple(transcribed), tuple(skipped), tuple(errors))
+
+    def _load_runtime(
+        self,
+        progress: ProgressReporter,
+        *,
+        device: Literal["cpu", "cuda"],
+        mode: Literal["standard", "batched"],
+        compute_type: str,
+        batch_size: int | None,
+        cpu_threads: int,
+        executor_workers: int,
+        word_timestamps: bool,
+        beam_size: int,
+        auto_compute: bool,
+        auto_batch: bool,
+        gpu: GpuInfo | None,
+    ) -> tuple[_TranscriptionRuntime, str, int | None]:
+        while True:
             progress.announce(
                 f"Loading transcription model '{self.config.transcription.model}' "
                 f"(device={device}, compute_type={compute_type}, mode={mode}, workers={executor_workers}, "
@@ -209,38 +297,95 @@ class TranscriptionService:
                     cpu_threads=cpu_threads,
                     num_workers=executor_workers,
                 )
-                transcription_engine = build_batched_pipeline(model) if mode == "batched" else model
+                engine = build_batched_pipeline(model) if mode == "batched" else model
             except TranscriptionError as exc:
+                next_compute = _next_compute_type(compute_type) if device == "cuda" and auto_compute and is_cuda_oom(exc) else None
+                if next_compute is not None:
+                    progress.announce(
+                        f"CUDA OOM while loading model with compute_type={compute_type}; retrying with compute_type={next_compute}."
+                    )
+                    compute_type = next_compute
+                    if auto_batch:
+                        batch_size = estimate_cuda_batch_size(gpu, compute_type)
+                    continue
                 raise TranscriptionEngineError(
                     f"Could not load transcription engine (model '{self.config.transcription.model}'): {exc}"
                 ) from exc
 
-            runtime = _TranscriptionRuntime(
-                engine=transcription_engine,
-                mode=mode,
-                word_timestamps=word_timestamps,
-                batch_size=batch_size,
-                beam_size=beam_size,
-                best_of=self.config.transcription.best_of,
-                vad_filter=self.config.transcription.vad_filter,
-                chunk_length_seconds=self.config.transcription.chunk_length_seconds,
-                condition_on_previous_text=self.config.transcription.condition_on_previous_text,
+            return (
+                _TranscriptionRuntime(
+                    engine=engine,
+                    mode=mode,
+                    word_timestamps=word_timestamps,
+                    batch_size=batch_size,
+                    beam_size=beam_size,
+                    best_of=self.config.transcription.best_of,
+                    vad_filter=self.config.transcription.vad_filter,
+                    chunk_length_seconds=self.config.transcription.chunk_length_seconds,
+                    condition_on_previous_text=self.config.transcription.condition_on_previous_text,
+                    compute_type=compute_type,
+                ),
+                compute_type,
+                batch_size,
             )
 
-            with ThreadPoolExecutor(max_workers=executor_workers) as executor:
-                futures = [executor.submit(self._transcribe_fresh, item, total, progress, runtime) for item in fresh_items]
-                for future in futures:
-                    outcome = future.result()
-                    if outcome.error is not None:
-                        errors.append(outcome.error)
-                        continue
-                    error = self._commit_fresh_transcript(db_path, outcome)
-                    if error is None:
-                        transcribed.append(outcome.row.id)
-                    else:
-                        errors.append(error)
+    def _preflight_transcribe(
+        self,
+        item: _TranscriptionWorkItem,
+        total: int,
+        progress: ProgressReporter,
+        runtime: _TranscriptionRuntime,
+        *,
+        device: Literal["cpu", "cuda"],
+        cpu_threads: int,
+        executor_workers: int,
+        auto_compute: bool,
+        auto_batch: bool,
+        gpu: GpuInfo | None,
+    ) -> tuple[_FreshTranscriptionOutcome, _TranscriptionRuntime, str, int | None]:
+        compute_type = runtime.compute_type
+        batch_size = runtime.batch_size
+        while True:
+            try:
+                segments = self._transcribe_segments(item, total, progress, runtime)
+                return _FreshTranscriptionOutcome(item.row, segments=segments), runtime, compute_type, batch_size
+            except TranscriptionError as exc:
+                if device != "cuda" or not is_cuda_oom(exc):
+                    return _FreshTranscriptionOutcome(item.row, error=f"{item.row.id}: {exc}"), runtime, compute_type, batch_size
 
-        return TranscriptionResult(tuple(transcribed), tuple(skipped), tuple(errors))
+                reduced_batch = _halve_batch_size(batch_size) if auto_batch else None
+                if reduced_batch is not None:
+                    progress.announce(
+                        f"{item.row.id}: CUDA OOM at batch_size={batch_size}; retrying pre-flight with batch_size={reduced_batch}."
+                    )
+                    batch_size = reduced_batch
+                    runtime = replace(runtime, batch_size=batch_size)
+                    continue
+
+                next_compute = _next_compute_type(compute_type) if auto_compute else None
+                if next_compute is not None:
+                    progress.announce(
+                        f"{item.row.id}: CUDA OOM at compute_type={compute_type}; reloading with compute_type={next_compute}."
+                    )
+                    compute_type = next_compute
+                    batch_size = estimate_cuda_batch_size(gpu, compute_type) if auto_batch else batch_size
+                    runtime, compute_type, batch_size = self._load_runtime(
+                        progress,
+                        device=device,
+                        mode=runtime.mode,
+                        compute_type=compute_type,
+                        batch_size=batch_size,
+                        cpu_threads=cpu_threads,
+                        executor_workers=executor_workers,
+                        word_timestamps=runtime.word_timestamps,
+                        beam_size=runtime.beam_size,
+                        auto_compute=auto_compute,
+                        auto_batch=auto_batch,
+                        gpu=gpu,
+                    )
+                    continue
+
+                return _FreshTranscriptionOutcome(item.row, error=f"{item.row.id}: {exc}; {_OOM_HINT}"), runtime, compute_type, batch_size
 
     def _process_existing_transcript(
         self,
@@ -283,32 +428,52 @@ class TranscriptionService:
         progress: ProgressReporter,
         runtime: _TranscriptionRuntime,
     ) -> _FreshTranscriptionOutcome:
+        try:
+            segments = self._transcribe_segments(item, total, progress, runtime)
+            return _FreshTranscriptionOutcome(item.row, segments=segments)
+        except TranscriptionError as exc:
+            retry_batch = _halve_batch_size(runtime.batch_size) if runtime.mode == "batched" and is_cuda_oom(exc) else None
+            if retry_batch is not None:
+                progress.announce(f"{item.row.id}: CUDA OOM at batch_size={runtime.batch_size}; retrying once with batch_size={retry_batch}.")
+                try:
+                    segments = self._transcribe_segments(item, total, progress, runtime, batch_size_override=retry_batch)
+                    return _FreshTranscriptionOutcome(item.row, segments=segments)
+                except TranscriptionError as retry_exc:
+                    suffix = f"; {_OOM_HINT}" if is_cuda_oom(retry_exc) else ""
+                    return _FreshTranscriptionOutcome(item.row, error=f"{item.row.id}: {retry_exc}{suffix}")
+            suffix = f"; {_OOM_HINT}" if is_cuda_oom(exc) else ""
+            return _FreshTranscriptionOutcome(item.row, error=f"{item.row.id}: {exc}{suffix}")
+
+    def _transcribe_segments(
+        self,
+        item: _TranscriptionWorkItem,
+        total: int,
+        progress: ProgressReporter,
+        runtime: _TranscriptionRuntime,
+        *,
+        batch_size_override: int | None = None,
+    ) -> tuple[TranscriptSegment, ...]:
         row = item.row
         progress.start_item(row.id, item.index, total)
         try:
             video_dir = self.project_dir / self.config.paths.workdir / row.id
             filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
             audio_path = video_dir / "audio" / f"{row.id}.wav"
-            try:
-                results = transcribe_audio(
-                    runtime.engine,
-                    audio_path,
-                    language=self.config.transcription.language,
-                    word_timestamps=runtime.word_timestamps,
-                    mode=runtime.mode,
-                    batch_size=runtime.batch_size,
-                    beam_size=runtime.beam_size,
-                    best_of=runtime.best_of,
-                    vad_filter=runtime.vad_filter,
-                    chunk_length_seconds=runtime.chunk_length_seconds,
-                    condition_on_previous_text=runtime.condition_on_previous_text,
-                    progress_callback=lambda fraction, video_id=row.id: progress.update_item(video_id, fraction),
-                )
-            except TranscriptionError as exc:
-                return _FreshTranscriptionOutcome(row, error=f"{row.id}: {exc}")
-
-            segments = tuple(_to_segments(row.id, results))
-            return _FreshTranscriptionOutcome(row, segments=segments)
+            results = transcribe_audio(
+                runtime.engine,
+                audio_path,
+                language=self.config.transcription.language,
+                word_timestamps=runtime.word_timestamps,
+                mode=runtime.mode,
+                batch_size=batch_size_override if batch_size_override is not None else runtime.batch_size,
+                beam_size=runtime.beam_size,
+                best_of=runtime.best_of,
+                vad_filter=runtime.vad_filter,
+                chunk_length_seconds=runtime.chunk_length_seconds,
+                condition_on_previous_text=runtime.condition_on_previous_text,
+                progress_callback=lambda fraction, video_id=row.id: progress.update_item(video_id, fraction),
+            )
+            return tuple(_to_segments(row.id, results))
         finally:
             progress.finish_item(row.id)
 
@@ -361,6 +526,34 @@ class TranscriptionService:
         except OSError:
             return False
         return True
+
+
+def _describe_cuda_plan(gpu: GpuInfo | None, *, auto_compute: bool, auto_batch: bool) -> str:
+    plan = plan_cuda_auto(gpu)
+    planned = []
+    if auto_compute:
+        planned.append(f"compute_type={plan.compute_type}")
+    if auto_batch:
+        planned.append(f"batch_size={plan.batch_size}")
+    planned_text = ", ".join(planned) if planned else "explicit runtime settings"
+    if gpu is None:
+        return f"GPU details unavailable; {planned_text}; {plan.rationale}."
+    capability = "unknown" if gpu.compute_capability is None else f"{gpu.compute_capability[0]}.{gpu.compute_capability[1]}"
+    driver = f", driver {gpu.driver_version}" if gpu.driver_version else ""
+    return (
+        f"GPU: {gpu.name} -- {gpu.total_vram_mb} MiB dedicated total, {gpu.free_vram_mb} MiB dedicated free, "
+        f"CC {capability}{driver} (via {gpu.source}); auto plan: {planned_text}; {plan.rationale}."
+    )
+
+
+def _next_compute_type(compute_type: str) -> str | None:
+    return _COMPUTE_DOWNGRADES.get(compute_type)
+
+
+def _halve_batch_size(batch_size: int | None) -> int | None:
+    if batch_size is None or batch_size <= 1:
+        return None
+    return max(1, batch_size // 2)
 
 
 def _to_segments(video_id: str, results: list[TranscriptSegmentResult]) -> list[TranscriptSegment]:

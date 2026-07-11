@@ -13,6 +13,7 @@ from videodoc.core.models.video_metadata import VideoMetadata
 from videodoc.core.services.transcription_service import TranscriptionService
 from videodoc.core.storage.database import VideoRow, ensure_schema, upsert_video
 from videodoc.core.storage.filesystem import ensure_video_workdir
+from videodoc.core.utils.gpu import GpuInfo
 from videodoc.core.utils.progress import ProgressReporter
 from videodoc.core.utils.transcription import TranscriptSegmentResult, TranscriptionError
 
@@ -75,6 +76,17 @@ def _fake_results():
         TranscriptSegmentResult(start_seconds=0.0, end_seconds=2.5, text="Ciao a tutti", confidence=0.9),
         TranscriptSegmentResult(start_seconds=2.5, end_seconds=5.0, text="benvenuti", confidence=0.8),
     ]
+
+
+def _rtx4070(free_vram_mb=7301):
+    return GpuInfo(
+        name="NVIDIA GeForce RTX 4070 Laptop GPU",
+        total_vram_mb=8188,
+        free_vram_mb=free_vram_mb,
+        compute_capability=(8, 9),
+        driver_version="555.99",
+        source="nvml",
+    )
 
 
 def _stub_load_model(monkeypatch, fn=None):
@@ -201,8 +213,7 @@ def test_announces_before_loading_model_when_needed(tmp_path, monkeypatch):
     reporter = _RecordingReporter()
     TranscriptionService(project_dir, config).run(progress=reporter)
 
-    assert len(reporter.announced) == 1
-    assert config.transcription.model in reporter.announced[0]
+    assert any(config.transcription.model in message for message in reporter.announced)
 
 
 def test_does_not_announce_when_everything_already_transcribed(tmp_path, monkeypatch):
@@ -255,8 +266,10 @@ def test_cuda_auto_uses_batched_pipeline_and_runtime_options(tmp_path, monkeypat
     monkeypatch.setattr(transcription_service_module, "load_whisper_model", load_model)
     monkeypatch.setattr(transcription_service_module, "build_batched_pipeline", build_pipeline)
     monkeypatch.setattr(transcription_service_module, "transcribe_audio", fake_transcribe)
+    monkeypatch.setattr(transcription_service_module, "probe_gpu", lambda: _rtx4070())
 
-    result = TranscriptionService(project_dir, config).run()
+    reporter = _RecordingReporter()
+    result = TranscriptionService(project_dir, config).run(progress=reporter)
 
     assert result.transcribed == ("demo",)
     assert captured["model_name"] == "large-v3"
@@ -266,11 +279,129 @@ def test_cuda_auto_uses_batched_pipeline_and_runtime_options(tmp_path, monkeypat
     assert captured["pipeline_model"] is loaded_model
     assert captured["engine"] is batched_pipeline
     assert captured["transcribe_kwargs"]["mode"] == "batched"
-    assert captured["transcribe_kwargs"]["batch_size"] == 8
+    assert captured["transcribe_kwargs"]["batch_size"] == 19
     assert captured["transcribe_kwargs"]["beam_size"] == 1
     assert captured["transcribe_kwargs"]["word_timestamps"] is False
     assert captured["transcribe_kwargs"]["vad_filter"] is True
     assert captured["transcribe_kwargs"]["chunk_length_seconds"] == 30
+    assert "7301 MiB dedicated free" in reporter.announced[0]
+
+
+def test_cuda_model_load_oom_downgrades_auto_compute_type(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    config = config.model_copy(update={
+        "transcription": config.transcription.model_copy(update={"device": "cuda", "mode": "auto"})
+    })
+    _seed_video(project_dir, config)
+
+    load_compute_types = []
+
+    def load_model(model_name, **kwargs):
+        load_compute_types.append(kwargs["compute_type"])
+        if len(load_compute_types) == 1:
+            raise TranscriptionError("CUDA out of memory while loading")
+        return "loaded-model"
+
+    monkeypatch.setattr(transcription_service_module, "probe_gpu", lambda: _rtx4070(free_vram_mb=12000))
+    monkeypatch.setattr(transcription_service_module, "load_whisper_model", load_model)
+    monkeypatch.setattr(transcription_service_module, "build_batched_pipeline", lambda model: "batched-pipeline")
+    monkeypatch.setattr(transcription_service_module, "transcribe_audio", lambda model, audio_path, **kwargs: _fake_results())
+
+    result = TranscriptionService(project_dir, config).run()
+
+    assert result.transcribed == ("demo",)
+    assert load_compute_types == ["float16", "int8_float16"]
+
+
+def test_cuda_preflight_oom_halves_auto_batch(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    config = config.model_copy(update={
+        "transcription": config.transcription.model_copy(update={"device": "cuda", "mode": "auto"})
+    })
+    _seed_video(project_dir, config)
+    batches = []
+
+    def transcribe(model, audio_path, **kwargs):
+        batches.append(kwargs["batch_size"])
+        if len(batches) == 1:
+            raise TranscriptionError("CUDA out of memory during transcription")
+        return _fake_results()
+
+    _stub_load_model(monkeypatch)
+    monkeypatch.setattr(transcription_service_module, "probe_gpu", lambda: _rtx4070())
+    monkeypatch.setattr(transcription_service_module, "build_batched_pipeline", lambda model: model)
+    monkeypatch.setattr(transcription_service_module, "transcribe_audio", transcribe)
+
+    result = TranscriptionService(project_dir, config).run()
+
+    assert result.transcribed == ("demo",)
+    assert batches == [19, 9]
+
+
+def test_cuda_remaining_item_oom_retries_once_with_half_batch(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    config = config.model_copy(update={
+        "transcription": config.transcription.model_copy(update={"device": "cuda", "mode": "auto"})
+    })
+    _seed_video(project_dir, config, video_id="alpha", filename="Alpha.mp4")
+    _seed_video(project_dir, config, video_id="bravo", filename="Bravo.mp4")
+    calls = []
+    bravo_attempts = {"n": 0}
+
+    def transcribe(model, audio_path, **kwargs):
+        calls.append((audio_path.name, kwargs["batch_size"]))
+        if audio_path.name == "bravo.wav":
+            bravo_attempts["n"] += 1
+            if bravo_attempts["n"] == 1:
+                raise TranscriptionError("CUDA out of memory during transcription")
+        return _fake_results()
+
+    _stub_load_model(monkeypatch)
+    monkeypatch.setattr(transcription_service_module, "probe_gpu", lambda: _rtx4070())
+    monkeypatch.setattr(transcription_service_module, "build_batched_pipeline", lambda model: model)
+    monkeypatch.setattr(transcription_service_module, "transcribe_audio", transcribe)
+
+    result = TranscriptionService(project_dir, config).run()
+
+    assert result.transcribed == ("alpha", "bravo")
+    assert ("bravo.wav", 19) in calls
+    assert ("bravo.wav", 9) in calls
+
+
+def test_cuda_explicit_runtime_oom_reports_actionable_hint(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    config = config.model_copy(update={
+        "transcription": config.transcription.model_copy(update={
+            "device": "cuda",
+            "compute_type": "float16",
+            "mode": "batched",
+            "batch_size": 4,
+        })
+    })
+    _seed_video(project_dir, config)
+
+    _stub_load_model(monkeypatch)
+    monkeypatch.setattr(transcription_service_module, "probe_gpu", lambda: _rtx4070())
+    monkeypatch.setattr(transcription_service_module, "build_batched_pipeline", lambda model: model)
+    monkeypatch.setattr(
+        transcription_service_module,
+        "transcribe_audio",
+        lambda model, audio_path, **kwargs: (_ for _ in ()).throw(TranscriptionError("CUDA out of memory")),
+    )
+
+    result = TranscriptionService(project_dir, config).run()
+
+    assert result.transcribed == ()
+    assert "set transcription.batch_size" in result.errors[0]
+
 def test_single_video_transcribed_updates_metadata_and_db(tmp_path, monkeypatch):
     project_dir = tmp_path / "demo"
     project_dir.mkdir()

@@ -14,6 +14,7 @@ dependencies = [
     "platformdirs>=4.2",
     "rich>=13.7",
     "faster-whisper>=1.0",
+    "nvidia-ml-py>=12.535.77",
 ]
 
 [project.optional-dependencies]

@@ -1,6 +1,18 @@
 import pytest
 
 import videodoc.core.utils.hardware as hardware
+from videodoc.core.utils.gpu import GpuInfo
+
+
+def _gpu(free, total=8188, cc=(8, 9), name="GPU"):
+    return GpuInfo(
+        name=name,
+        total_vram_mb=total,
+        free_vram_mb=free,
+        compute_capability=cc,
+        driver_version="551.86",
+        source="nvml",
+    )
 
 
 def test_resolve_cpu_count_falls_back_to_one(monkeypatch):
@@ -28,11 +40,28 @@ def test_resolve_device(monkeypatch, configured, override, usable, expected):
     assert hardware.resolve_device(configured, override) == expected
 
 
-def test_compute_type_auto_depends_on_device_and_override():
+@pytest.mark.parametrize("gpu,expected_compute,expected_batch", [
+    (_gpu(7301, total=8188, cc=(8, 9), name="4070 Laptop"), "int8_float16", 19),
+    (_gpu(22000, total=24576, cc=(8, 9), name="4090"), "float16", 24),
+    (_gpu(6000, total=8192, cc=(6, 1), name="GTX 1060"), "int8", 16),
+    (_gpu(3500, total=4096, cc=(8, 9), name="tiny"), "int8_float16", 4),
+    (_gpu(7301, total=8188, cc=None, name="old smi"), "int8_float16", 19),
+    (None, "int8_float16", 8),
+])
+def test_plan_cuda_auto(gpu, expected_compute, expected_batch):
+    plan = hardware.plan_cuda_auto(gpu)
+    assert plan.compute_type == expected_compute
+    assert plan.batch_size == expected_batch
+    assert "dedicated VRAM" in plan.rationale or gpu is None
+
+
+def test_compute_type_auto_depends_on_device_gpu_and_override():
+    gpu = _gpu(22000, total=24576, cc=(8, 9))
+    assert hardware.resolve_compute_type("auto", "cuda", gpu=gpu) == "float16"
     assert hardware.resolve_compute_type("auto", "cuda") == "int8_float16"
-    assert hardware.resolve_compute_type("auto", "cpu") == "int8"
-    assert hardware.resolve_compute_type("float16", "cuda") == "float16"
-    assert hardware.resolve_compute_type("auto", "cuda", "float16") == "float16"
+    assert hardware.resolve_compute_type("auto", "cpu", gpu=gpu) == "int8"
+    assert hardware.resolve_compute_type("float16", "cuda", gpu=_gpu(3500)) == "float16"
+    assert hardware.resolve_compute_type("auto", "cuda", "float16", gpu=_gpu(3500)) == "float16"
 
 
 @pytest.mark.parametrize("configured,override,device,expected", [
@@ -54,12 +83,14 @@ def test_transcription_workers_cpu_vs_gpu_defaults(monkeypatch):
     assert hardware.resolve_transcription_workers("auto", 5, device="cuda", mode="batched") == 5
 
 
-def test_transcription_batch_size_defaults_and_overrides():
+def test_transcription_batch_size_defaults_gpu_and_overrides():
+    gpu = _gpu(7301)
+    assert hardware.resolve_transcription_batch_size("auto", None, device="cuda", mode="batched", gpu=gpu) == 19
     assert hardware.resolve_transcription_batch_size("auto", None, device="cuda", mode="batched") == hardware.DEFAULT_GPU_BATCH_SIZE
-    assert hardware.resolve_transcription_batch_size("auto", None, device="cpu", mode="batched") == 1
-    assert hardware.resolve_transcription_batch_size(4, None, device="cuda", mode="batched") == 4
-    assert hardware.resolve_transcription_batch_size("auto", 2, device="cuda", mode="batched") == 2
-    assert hardware.resolve_transcription_batch_size("auto", 2, device="cuda", mode="standard") is None
+    assert hardware.resolve_transcription_batch_size("auto", None, device="cpu", mode="batched", gpu=gpu) == 1
+    assert hardware.resolve_transcription_batch_size(4, None, device="cuda", mode="batched", gpu=gpu) == 4
+    assert hardware.resolve_transcription_batch_size("auto", 2, device="cuda", mode="batched", gpu=gpu) == 2
+    assert hardware.resolve_transcription_batch_size("auto", 2, device="cuda", mode="standard", gpu=gpu) is None
 
 
 def test_cpu_threads_auto_avoids_oversubscription(monkeypatch):

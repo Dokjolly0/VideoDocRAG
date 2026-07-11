@@ -406,7 +406,7 @@ Project: corso-software-x
 +-----------------+
 ```
 
-Se nessun video ha ancora l'audio estratto (`extract-audio` non è mai stato eseguito), il comando fallisce subito (`exit code` 1) senza caricare alcun modello. Un problema di trascrizione su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0 — vedi §8 per un caso reale (libreria CUDA mancante) riscontrato durante lo sviluppo. Su GPU NVIDIA, `auto` usa CUDA, `int8_float16`, modalità batched, VAD e `beam_size: 1` per tenere più piena la GPU su video lunghi.
+Se nessun video ha ancora l'audio estratto (`extract-audio` non è mai stato eseguito), il comando fallisce subito (`exit code` 1) senza caricare alcun modello. Un problema di trascrizione su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0 — vedi §8 per un caso reale (libreria CUDA mancante) riscontrato durante lo sviluppo. Su GPU NVIDIA, `auto` usa CUDA, modalità batched, VAD e `beam_size: 1`; `compute_type` e `batch_size` vengono calcolati dalla VRAM dedicata libera, mai dalla memoria GPU condivisa di Windows.
 
 ### 5.10 Verificare lo stato dell'ambiente (`doctor`)
 
@@ -420,7 +420,7 @@ videodoc doctor
 OK    Python version: 3.13.14 (>= 3.11 required)
 OK    FFmpeg (ffprobe + ffmpeg): both found on PATH
 OK    faster-whisper: importable
-OK    GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+OK    GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable; NVIDIA GeForce RTX 4070 Laptop GPU, 8188 MiB dedicated total, 7301 MiB dedicated free, CC 8.9, driver 555.99 (via nvml); auto plan: compute_type=int8_float16, batch_size=19 (...)
 OK    Project registry: 3 project(s) registered -- ...
 OK    Default projects folder: ... is writable (default location)
 6 OK, 0 warning(s), 0 error(s).
@@ -606,13 +606,13 @@ $env:PATH = "<percorso-venv>\Lib\site-packages\nvidia\cublas\bin;<percorso-venv>
 Vale solo per la sessione di terminale corrente — da ripetere ad ogni nuova sessione, oppure aggiungi questi due percorsi al `PATH` di sistema in modo permanente. In alternativa, esegui su una macchina senza GPU rilevata (nessun problema di CUDA in quel caso, dato che `faster-whisper` non tenta nemmeno di usarla).
 
 **`videodoc transcribe` è molto lento o scarica diversi GB al primo avvio.**
-Il modello configurato (default `transcription.model: large-v3`) viene scaricato da Hugging Face al primo utilizzo reale. Per throughput massimo su una GPU da 8 GB come una RTX 4070 Laptop, usa o lascia i default aggiornati: CUDA, `compute_type: int8_float16`, `mode: batched`, `batch_size: 8`, `beam_size: 1`, VAD attivo e `word_timestamps: false`. Il comando equivalente è:
+Il modello configurato (default `transcription.model: large-v3`) viene scaricato da Hugging Face al primo utilizzo reale. Per throughput massimo su una GPU da 8 GB come una RTX 4070 Laptop, usa o lascia i default aggiornati: CUDA, `mode: batched`, `beam_size: 1`, VAD attivo e `word_timestamps: false`; `compute_type` e `batch_size` restano `auto`, così il planner li calcola dalla VRAM dedicata libera con un margine di sicurezza. Su una 4070 Laptop da 8 GB libera, il batch può salire oltre il vecchio default 8; se la VRAM disponibile è minore, scende automaticamente.
 
 ```powershell
-videodoc transcribe <progetto> --device cuda --mode batched --compute-type int8_float16 --batch-size 8 --beam-size 1 --workers 1 --no-word-timestamps
+videodoc transcribe <progetto> --device cuda --mode batched --beam-size 1 --workers 1 --no-word-timestamps
 ```
 
-Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslate2 lavora su GPU; il dato più importante è `utilization.gpu`. Se la VRAM va in errore, prova `--batch-size 4`. Se vuoi una prova rapida sacrificando qualità, modifica temporaneamente `transcription.model` in `config.yaml` con un modello più piccolo (es. `medium`, `small`, `base`).
+Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslate2 lavora su GPU; il dato più importante è `utilization.gpu`. Il planner considera solo VRAM dedicata (`memory.free`), non la memoria GPU condivisa di Windows. Se compare un OOM, il comando prova a dimezzare il batch o a usare un compute type più leggero; per una prova manuale puoi forzare `--batch-size 4` o `--device cpu`. Se vuoi una prova rapida sacrificando qualità, modifica temporaneamente `transcription.model` in `config.yaml` con un modello più piccolo (es. `medium`, `small`, `base`).
 
 ## 9. Cosa non è ancora disponibile
 
