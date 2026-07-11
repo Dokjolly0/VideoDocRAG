@@ -7,6 +7,7 @@ import videodoc.core.services.setup_service as setup_service_module
 from videodoc.cli.app import app
 from videodoc.core.services.doctor_service import CheckResult, DoctorResult
 from videodoc.core.utils.cuda import CudaProbeError
+from videodoc.core.utils.transcription import TranscriptionError
 
 runner = CliRunner()
 
@@ -14,6 +15,11 @@ runner = CliRunner()
 def _env(tmp_path, monkeypatch):
     monkeypatch.setenv("VIDEODOC_HOME", str(tmp_path))
     monkeypatch.setenv("VIDEODOC_DATA_DIR", str(tmp_path))
+
+
+def _healthy_doctor(monkeypatch):
+    monkeypatch.setattr(doctor_service_module.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(doctor_service_module, "get_cuda_device_count", lambda: 0)
 
 
 def test_setup_clean_state_applies_nothing(tmp_path, monkeypatch):
@@ -123,3 +129,69 @@ def test_setup_check_with_no_fix_available_is_reported_and_left_unresolved(tmp_p
     assert "Mystery check" in result.stdout
     assert "Applying fix" not in result.stdout
     assert result.exit_code == 1
+
+
+def test_setup_with_project_prefetches_configured_model(tmp_path, monkeypatch):
+    _healthy_doctor(monkeypatch)
+    _env(tmp_path, monkeypatch)
+    runner.invoke(app, ["init", "demo", "--path", str(tmp_path / "demo")])
+
+    calls = []
+    monkeypatch.setattr(setup_command_module, "load_whisper_model", lambda name: calls.append(name))
+
+    result = runner.invoke(app, ["setup", "demo"])
+    assert result.exit_code == 0
+    assert calls == ["large-v3"]  # ProjectConfig.default()'s transcription.model
+    assert "ready" in result.stdout.lower()
+
+
+def test_setup_without_project_never_loads_a_model(tmp_path, monkeypatch):
+    _healthy_doctor(monkeypatch)
+    _env(tmp_path, monkeypatch)
+
+    calls = []
+    monkeypatch.setattr(setup_command_module, "load_whisper_model", lambda name: calls.append(name))
+
+    result = runner.invoke(app, ["setup"])
+    assert result.exit_code == 0
+    assert calls == []
+
+
+def test_setup_with_project_download_failure_fails(tmp_path, monkeypatch):
+    _healthy_doctor(monkeypatch)
+    _env(tmp_path, monkeypatch)
+    runner.invoke(app, ["init", "demo", "--path", str(tmp_path / "demo")])
+
+    def failing_load(name):
+        raise TranscriptionError("no network")
+
+    monkeypatch.setattr(setup_command_module, "load_whisper_model", failing_load)
+
+    result = runner.invoke(app, ["setup", "demo"])
+    assert result.exit_code == 1
+    assert "no network" in result.output
+
+
+def test_setup_with_unknown_project_fails(tmp_path, monkeypatch):
+    _healthy_doctor(monkeypatch)
+    _env(tmp_path, monkeypatch)
+
+    result = runner.invoke(app, ["setup", "does-not-exist"])
+    assert result.exit_code == 1
+
+
+def test_setup_with_project_unsupported_engine_warns_and_skips(tmp_path, monkeypatch):
+    _healthy_doctor(monkeypatch)
+    _env(tmp_path, monkeypatch)
+    custom = tmp_path / "demo"
+    runner.invoke(app, ["init", "demo", "--path", str(custom)])
+    config_path = custom / "config.yaml"
+    config_path.write_text(config_path.read_text(encoding="utf-8").replace("engine: faster-whisper", "engine: whisper.cpp"), encoding="utf-8")
+
+    calls = []
+    monkeypatch.setattr(setup_command_module, "load_whisper_model", lambda name: calls.append(name))
+
+    result = runner.invoke(app, ["setup", "demo"])
+    assert result.exit_code == 0
+    assert calls == []
+    assert "no model prefetch support" in result.stdout.lower()

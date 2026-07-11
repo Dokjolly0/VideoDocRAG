@@ -1,18 +1,35 @@
+from typing import Optional
+
 import typer
 
-from videodoc.cli.output import console, print_check_result, print_warning
+from videodoc.cli.output import console, print_check_result, print_error, print_warning
+from videodoc.core.errors import InvalidConfigError, ProjectNotFoundError
 from videodoc.core.services.doctor_service import DoctorService
+from videodoc.core.services.project_service import ProjectService
 from videodoc.core.services.setup_service import SetupService
+from videodoc.core.utils.transcription import TranscriptionError, load_whisper_model
 
 
-def setup_command() -> None:
-    """Machine-scoped: no project argument. Runs doctor's checks, then
-    offers to fix whatever isn't 'ok' -- pip-kind fixes run automatically
-    (venv-scoped, reversible), system-kind fixes ask for confirmation first
-    (they touch the machine outside this project), manual-kind fixes are
-    only ever printed, never attempted (see doctor_service.py's CheckResult
-    docstring for why -- e.g. a child process can't durably change its
-    parent shell's PATH)."""
+def setup_command(
+    project: Optional[str] = typer.Argument(
+        None, help="Project name or path -- if given, also pre-downloads its configured transcription model"
+    ),
+) -> None:
+    """Runs doctor's checks, then offers to fix whatever isn't 'ok' --
+    pip-kind fixes run automatically (venv-scoped, reversible), system-kind
+    fixes ask for confirmation first (they touch the machine outside this
+    project), manual-kind fixes are only ever printed, never attempted (see
+    doctor_service.py's CheckResult docstring for why -- e.g. a child
+    process can't durably change its parent shell's PATH).
+
+    The machine-scoped checks above never take a project argument (doctor
+    doesn't either -- see its _check_faster_whisper, which deliberately
+    avoids loading a real model). PROJECT is optional and only controls one
+    extra, project-scoped step at the end: pre-downloading that project's
+    configured Whisper model, so 'videodoc transcribe' never has to do a
+    silent, multi-GB first-time download in the middle of its own per-video
+    progress bars (faster-whisper suppresses that download's own progress
+    output -- see transcription_service.py)."""
     before = DoctorService().run()
     setup_service = SetupService()
 
@@ -82,6 +99,29 @@ def setup_command() -> None:
                 print_check_result(updated.status, f"{updated.name}: {updated.message}")
                 if updated.status != "error":
                     unresolved_error_ids.discard(check_id)
+
+    if project is not None:
+        try:
+            service = ProjectService.load(project)
+        except (ProjectNotFoundError, InvalidConfigError) as exc:
+            print_error(str(exc))
+            raise typer.Exit(code=1)
+
+        engine = service.config.transcription.engine
+        model_name = service.config.transcription.model
+        if engine != "faster-whisper":
+            print_warning(f"transcription engine '{engine}' has no model prefetch support yet -- skipped.")
+        else:
+            console.print(
+                f"Pre-downloading transcription model '{model_name}' for '{service.config.project.slug}' "
+                f"-- first use may download several GB from Hugging Face and show no progress while doing so."
+            )
+            try:
+                load_whisper_model(model_name)
+            except TranscriptionError as exc:
+                print_error(f"could not load/download model '{model_name}': {exc}")
+                raise typer.Exit(code=1)
+            console.print(f"Model '{model_name}' is ready (downloaded and cached, or already present).")
 
     if unresolved_error_ids:
         raise typer.Exit(code=1)

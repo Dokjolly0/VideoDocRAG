@@ -88,6 +88,16 @@ class TranscriptionService:
 
         model = None
         if needs_transcription:
+            # faster-whisper deliberately disables its own download progress
+            # bar (see faster_whisper.utils.download_model's tqdm_class=
+            # disabled_tqdm) -- on a first-time, multi-GB model download this
+            # call can block for minutes with zero output otherwise, easily
+            # mistaken for a hang. This is the only feedback available short
+            # of reimplementing huggingface_hub's download ourselves.
+            progress.announce(
+                f"Loading transcription model '{self.config.transcription.model}' -- first use may "
+                f"download several GB from Hugging Face and show no progress while doing so."
+            )
             try:
                 model = load_whisper_model(self.config.transcription.model)
             except TranscriptionError as exc:

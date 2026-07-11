@@ -13,7 +13,16 @@ from videodoc.core.models.video_metadata import VideoMetadata
 from videodoc.core.services.transcription_service import TranscriptionService
 from videodoc.core.storage.database import VideoRow, ensure_schema, upsert_video
 from videodoc.core.storage.filesystem import ensure_video_workdir
+from videodoc.core.utils.progress import ProgressReporter
 from videodoc.core.utils.transcription import TranscriptSegmentResult, TranscriptionError
+
+
+class _RecordingReporter(ProgressReporter):
+    def __init__(self):
+        self.announced = []
+
+    def announce(self, message):
+        self.announced.append(message)
 
 
 def _config():
@@ -179,6 +188,40 @@ def test_model_not_loaded_when_everything_already_transcribed(tmp_path, monkeypa
 
     assert call_count["n"] == 0
     assert result.skipped == ("demo",)
+
+
+def test_announces_before_loading_model_when_needed(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config)
+    _stub_load_model(monkeypatch)
+    _stub_transcribe(monkeypatch)
+
+    reporter = _RecordingReporter()
+    TranscriptionService(project_dir, config).run(progress=reporter)
+
+    assert len(reporter.announced) == 1
+    assert config.transcription.model in reporter.announced[0]
+
+
+def test_does_not_announce_when_everything_already_transcribed(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _, video_dir = _seed_video(project_dir, config)
+    transcript = Transcript(
+        video_id="demo", engine="faster-whisper", model="tiny", language="it",
+        segments=[TranscriptSegment(id="demo_seg_0000", start_seconds=0.0, end_seconds=1.0, text="hi", confidence=0.9)],
+    )
+    transcript.save(video_dir / "transcript" / "demo.json")
+    _stub_load_model(monkeypatch, lambda model_name: (_ for _ in ()).throw(AssertionError("model should not load")))
+
+    reporter = _RecordingReporter()
+    result = TranscriptionService(project_dir, config).run(progress=reporter)
+
+    assert result.skipped == ("demo",)
+    assert reporter.announced == []
 
 
 def test_single_video_transcribed_updates_metadata_and_db(tmp_path, monkeypatch):

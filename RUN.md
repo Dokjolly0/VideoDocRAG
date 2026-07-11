@@ -455,6 +455,20 @@ WARN  GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loa
 
 Le correzioni di sistema riuscite non vengono ri-verificate nello stesso processo (il `PATH` del processo già in esecuzione non si aggiorna) — solo le correzioni pip lo sono, per questo la sezione finale "Re-checking..." appare solo quando è stata applicata almeno una correzione pip.
 
+**Argomento progetto opzionale**: `videodoc setup <progetto>` esegue in più anche il pre-download del modello Whisper configurato per quel progetto (`transcription.model`, motore `faster-whisper`), chiamando lo stesso caricamento usato da `transcribe`:
+
+```bash
+videodoc setup corso-software-x
+```
+
+```text
+...
+Pre-downloading transcription model 'large-v3' for 'corso-software-x' -- first use may download several GB from Hugging Face and show no progress while doing so.
+Model 'large-v3' is ready (downloaded and cached, or already present).
+```
+
+Perché conviene farlo qui invece che al primo `transcribe`: `faster-whisper` disabilita deliberatamente la propria progress bar di download (`tqdm_class=disabled_tqdm`), quindi un primo download di alcuni GB durante `transcribe` non mostra alcun avanzamento e può sembrare bloccato. Eseguendo `videodoc setup <progetto>` una volta, il modello è già in cache locale prima di lanciare la pipeline vera e propria. Senza argomento, `setup` resta esattamente come prima (nessun download, solo i controlli macchina).
+
 ## 6. Personalizzare i percorsi (variabili d'ambiente)
 
 Due variabili d'ambiente permettono di controllare dove VideoDocRAG legge/scrive i propri dati, utili per test, ambienti sandbox o setup non standard:

@@ -14,3 +14,10 @@ class ProgressReporter:
 
     def finish_item(self, item_id: str) -> None:
         pass
+
+    def announce(self, message: str) -> None:
+        """One-off status line for something happening outside the item
+        loop -- e.g. "loading the transcription model" -- with no fraction
+        of its own to report (faster-whisper deliberately suppresses its
+        model download's own progress bar, so there's nothing to forward)."""
+        pass

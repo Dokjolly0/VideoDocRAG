@@ -62,3 +62,10 @@ class RichProgressReporter(ProgressReporter):
             self._item_task = None
         if self._overall_task is not None:
             self._progress.advance(self._overall_task, 1)
+
+    def announce(self, message: str) -> None:
+        # Printed through self._progress.console (not a bare print()) so it
+        # interleaves correctly with the bars once the Live display is
+        # running -- and prints as a completely normal line before that,
+        # since Live hasn't started yet at this point (see start_item).
+        self._progress.console.print(message)
