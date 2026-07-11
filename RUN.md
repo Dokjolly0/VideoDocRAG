@@ -558,7 +558,7 @@ Il valore passato a `--videos`/`--attachments`/`--codebase` (o scritto a mano in
 **`Error: ... must not contain '..' path segments ...`.**
 Un valore relativo tipo `../altrove` o `sub/../../altrove` per `workdir`/`indexes`/`output`/`database`/`--videos`/`--attachments`/`--codebase` verrebbe risolto uscendo dalla cartella del progetto una volta unito al suo percorso — non è ammesso. Se l'intento è davvero riferirsi a una cartella esterna, usa un percorso assoluto esplicito; per `workdir`/`indexes`/`output`/`database` non è mai ammesso un riferimento esterno (devono restare dentro il progetto, vedi §5.1).
 
-**`scan` riporta "Videos: 0 found" ma i video ci sono.**
+**`scan` riporta `0 found` nella riga `Videos` ma i video ci sono.**
 Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.allowed_video_extensions`, default `.mp4 .mkv .mov .avi .webm .m4v .wmv`) e che, se hai configurato un percorso esterno, quel percorso esista davvero e sia una cartella (non un file) — `scan` lo segnala con un `Warning` esplicito in entrambi i casi di problema.
 
 **`videodoc ingest` fallisce con "ffprobe ... was not found on PATH".**

@@ -1357,7 +1357,7 @@ Sources manifest updated: sources.yaml
 
 (La tabella di riepilogo è renderizzata con Rich: caratteri box-drawing Unicode su un terminale che li supporta, fallback ASCII come sopra su console Windows legacy.)
 
-Se una fonte è esterna al progetto (percorso assoluto in `config.yaml`, vedi §8.1.2), viene segnalata esplicitamente, es. `Videos: 8 found (external: D:\Corsi\Registrazioni)`. Una fonte esterna mancante o non trovata non interrompe la scansione: produce un avviso (`Warning: external videos path not found: ...`), non un errore.
+Se una fonte è esterna al progetto (percorso assoluto in `config.yaml`, vedi §8.1.2), viene segnalata esplicitamente nella cella della tabella, es. la riga `Videos` mostra `8 found (external: D:\Corsi\Registrazioni)`. Una fonte esterna mancante o non trovata non interrompe la scansione: produce un avviso (`Warning: external videos path not found: ...`), non un errore.
 
 Se `codebase/` è presente, il sistema deve sincronizzarla in modo idempotente:
 
