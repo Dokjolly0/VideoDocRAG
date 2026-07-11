@@ -10,6 +10,7 @@ from videodoc.core.models.video_metadata import VideoMetadata
 from videodoc.core.storage import filesystem
 from videodoc.core.storage.database import list_videos
 from videodoc.core.utils.ffmpeg import AudioExtractionError, extract_audio
+from videodoc.core.utils.progress import ProgressReporter
 
 
 @dataclass(frozen=True)
@@ -24,7 +25,8 @@ class AudioExtractionService:
         self.project_dir = project_dir
         self.config = config
 
-    def run(self) -> AudioExtractionResult:
+    def run(self, progress: ProgressReporter | None = None) -> AudioExtractionResult:
+        progress = progress or ProgressReporter()
         db_path = self.project_dir / self.config.paths.database
         if not db_path.exists():
             raise NoVideosFoundError(
@@ -53,46 +55,55 @@ class AudioExtractionService:
         skipped: list[str] = []
         errors: list[str] = []
 
-        for row in videos:
-            video_dir = self.project_dir / self.config.paths.workdir / row.id
-            filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
+        total = len(videos)
+        for index, row in enumerate(videos):
+            progress.start_item(row.id, index, total)
+            try:
+                video_dir = self.project_dir / self.config.paths.workdir / row.id
+                filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
 
-            audio_rel = Path(self.config.paths.workdir) / row.id / "audio" / f"{row.id}.wav"
-            final_path = self.project_dir / audio_rel
+                audio_rel = Path(self.config.paths.workdir) / row.id / "audio" / f"{row.id}.wav"
+                final_path = self.project_dir / audio_rel
 
-            if final_path.is_file():
-                # Already extracted in a previous run -- ffmpeg is never
-                # re-invoked, but metadata.json is reconciled in case it
-                # still holds ingest's folder-only placeholder (or is
-                # otherwise stale), so "skipped" still means fully correct
-                # on-disk state, not just "we didn't bother".
+                if final_path.is_file():
+                    # Already extracted in a previous run -- ffmpeg is never
+                    # re-invoked, but metadata.json is reconciled in case it
+                    # still holds ingest's folder-only placeholder (or is
+                    # otherwise stale), so "skipped" still means fully correct
+                    # on-disk state, not just "we didn't bother".
+                    if self._reconcile_metadata(video_dir, audio_rel):
+                        skipped.append(row.id)
+                    else:
+                        errors.append(f"{row.id}: audio already extracted but metadata.json could not be updated")
+                    continue
+
+                tmp_path = final_path.parent / f"{final_path.name}.tmp"
+                try:
+                    extract_audio(
+                        Path(row.path), tmp_path,
+                        total_duration_seconds=row.duration_seconds,
+                        progress_callback=lambda fraction, video_id=row.id: progress.update_item(video_id, fraction),
+                    )
+                except AudioExtractionError as exc:
+                    errors.append(f"{row.id}: {exc}")
+                    tmp_path.unlink(missing_ok=True)
+                    continue
+
+                try:
+                    tmp_path.replace(final_path)
+                except OSError as exc:
+                    errors.append(f"{row.id}: could not finalize audio file: {exc}")
+                    tmp_path.unlink(missing_ok=True)
+                    continue
+
                 if self._reconcile_metadata(video_dir, audio_rel):
-                    skipped.append(row.id)
+                    extracted.append(row.id)
                 else:
-                    errors.append(f"{row.id}: audio already extracted but metadata.json could not be updated")
-                continue
-
-            tmp_path = final_path.parent / f"{final_path.name}.tmp"
-            try:
-                extract_audio(Path(row.path), tmp_path)
-            except AudioExtractionError as exc:
-                errors.append(f"{row.id}: {exc}")
-                tmp_path.unlink(missing_ok=True)
-                continue
-
-            try:
-                tmp_path.replace(final_path)
-            except OSError as exc:
-                errors.append(f"{row.id}: could not finalize audio file: {exc}")
-                tmp_path.unlink(missing_ok=True)
-                continue
-
-            if self._reconcile_metadata(video_dir, audio_rel):
-                extracted.append(row.id)
-            else:
-                errors.append(
-                    f"{row.id}: audio extracted to {final_path.name} but metadata.json could not be updated"
-                )
+                    errors.append(
+                        f"{row.id}: audio extracted to {final_path.name} but metadata.json could not be updated"
+                    )
+            finally:
+                progress.finish_item(row.id)
 
         return AudioExtractionResult(tuple(extracted), tuple(skipped), tuple(errors))
 

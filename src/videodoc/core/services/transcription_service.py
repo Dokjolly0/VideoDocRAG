@@ -15,6 +15,7 @@ from videodoc.core.models.transcript import Transcript, TranscriptSegment
 from videodoc.core.models.video_metadata import VideoMetadata
 from videodoc.core.storage import filesystem
 from videodoc.core.storage.database import TranscriptSegmentRow, ensure_schema, list_videos, replace_transcript_segments
+from videodoc.core.utils.progress import ProgressReporter
 from videodoc.core.utils.transcription import TranscriptionError, load_whisper_model, transcribe_audio
 
 _SUPPORTED_ENGINES = ("faster-whisper",)
@@ -32,7 +33,8 @@ class TranscriptionService:
         self.project_dir = project_dir
         self.config = config
 
-    def run(self) -> TranscriptionResult:
+    def run(self, progress: ProgressReporter | None = None) -> TranscriptionResult:
+        progress = progress or ProgressReporter()
         db_path = self.project_dir / self.config.paths.database
         if not db_path.exists():
             raise NoVideosFoundError(
@@ -96,79 +98,86 @@ class TranscriptionService:
         transcribed: list[str] = []
         skipped: list[str] = []
 
-        for row in sorted(candidates, key=lambda r: r.id):
-            video_dir = self.project_dir / self.config.paths.workdir / row.id
-            filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
+        ordered_candidates = sorted(candidates, key=lambda r: r.id)
+        total = len(ordered_candidates)
+        for index, row in enumerate(ordered_candidates):
+            progress.start_item(row.id, index, total)
+            try:
+                video_dir = self.project_dir / self.config.paths.workdir / row.id
+                filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
 
-            transcript_rel = Path(self.config.paths.workdir) / row.id / "transcript" / f"{row.id}.json"
-            final_path = self.project_dir / transcript_rel
+                transcript_rel = Path(self.config.paths.workdir) / row.id / "transcript" / f"{row.id}.json"
+                final_path = self.project_dir / transcript_rel
 
-            if final_path.is_file():
-                # Already transcribed in a previous run -- the engine is
-                # never re-invoked, but the DB rows are always rewritten
-                # from the on-disk JSON (cheap DELETE+INSERT), so a prior
-                # transient DB failure self-heals instead of staying
-                # silently empty forever once the JSON file exists.
-                try:
-                    transcript = Transcript.load(final_path)
-                except InvalidTranscriptError as exc:
-                    errors.append(f"{row.id}: transcript already exists but could not be read: {exc}")
+                if final_path.is_file():
+                    # Already transcribed in a previous run -- the engine is
+                    # never re-invoked, but the DB rows are always rewritten
+                    # from the on-disk JSON (cheap DELETE+INSERT), so a prior
+                    # transient DB failure self-heals instead of staying
+                    # silently empty forever once the JSON file exists.
+                    try:
+                        transcript = Transcript.load(final_path)
+                    except InvalidTranscriptError as exc:
+                        errors.append(f"{row.id}: transcript already exists but could not be read: {exc}")
+                        continue
+                    try:
+                        replace_transcript_segments(db_path, row.id, _to_rows(row.id, transcript.segments))
+                    except DatabaseError as exc:
+                        errors.append(f"{row.id}: transcript already exists but database could not be updated: {exc}")
+                        continue
+                    if self._reconcile_metadata(video_dir, transcript_rel):
+                        skipped.append(row.id)
+                    else:
+                        errors.append(f"{row.id}: transcript already exists but metadata.json could not be updated")
                     continue
+
+                audio_path = video_dir / "audio" / f"{row.id}.wav"
                 try:
-                    replace_transcript_segments(db_path, row.id, _to_rows(row.id, transcript.segments))
+                    results = transcribe_audio(
+                        model, audio_path,
+                        language=self.config.transcription.language,
+                        word_timestamps=self.config.transcription.word_timestamps,
+                        progress_callback=lambda fraction, video_id=row.id: progress.update_item(video_id, fraction),
+                    )
+                except TranscriptionError as exc:
+                    errors.append(f"{row.id}: {exc}")
+                    continue
+
+                segments = [
+                    TranscriptSegment(
+                        id=f"{row.id}_seg_{i:04d}", start_seconds=r.start_seconds, end_seconds=r.end_seconds,
+                        text=r.text, confidence=r.confidence,
+                    )
+                    for i, r in enumerate(results)
+                ]
+                transcript = Transcript(
+                    video_id=row.id, engine=engine, model=self.config.transcription.model,
+                    language=self.config.transcription.language, segments=segments,
+                )
+
+                tmp_path = final_path.parent / f"{final_path.name}.tmp"
+                try:
+                    transcript.save(tmp_path)
+                    tmp_path.replace(final_path)
+                except OSError as exc:
+                    errors.append(f"{row.id}: could not finalize transcript file: {exc}")
+                    tmp_path.unlink(missing_ok=True)
+                    continue
+
+                try:
+                    replace_transcript_segments(db_path, row.id, _to_rows(row.id, segments))
                 except DatabaseError as exc:
-                    errors.append(f"{row.id}: transcript already exists but database could not be updated: {exc}")
+                    errors.append(f"{row.id}: transcript saved to {final_path.name} but database update failed: {exc}")
                     continue
+
                 if self._reconcile_metadata(video_dir, transcript_rel):
-                    skipped.append(row.id)
+                    transcribed.append(row.id)
                 else:
-                    errors.append(f"{row.id}: transcript already exists but metadata.json could not be updated")
-                continue
-
-            audio_path = video_dir / "audio" / f"{row.id}.wav"
-            try:
-                results = transcribe_audio(
-                    model, audio_path,
-                    language=self.config.transcription.language,
-                    word_timestamps=self.config.transcription.word_timestamps,
-                )
-            except TranscriptionError as exc:
-                errors.append(f"{row.id}: {exc}")
-                continue
-
-            segments = [
-                TranscriptSegment(
-                    id=f"{row.id}_seg_{i:04d}", start_seconds=r.start_seconds, end_seconds=r.end_seconds,
-                    text=r.text, confidence=r.confidence,
-                )
-                for i, r in enumerate(results)
-            ]
-            transcript = Transcript(
-                video_id=row.id, engine=engine, model=self.config.transcription.model,
-                language=self.config.transcription.language, segments=segments,
-            )
-
-            tmp_path = final_path.parent / f"{final_path.name}.tmp"
-            try:
-                transcript.save(tmp_path)
-                tmp_path.replace(final_path)
-            except OSError as exc:
-                errors.append(f"{row.id}: could not finalize transcript file: {exc}")
-                tmp_path.unlink(missing_ok=True)
-                continue
-
-            try:
-                replace_transcript_segments(db_path, row.id, _to_rows(row.id, segments))
-            except DatabaseError as exc:
-                errors.append(f"{row.id}: transcript saved to {final_path.name} but database update failed: {exc}")
-                continue
-
-            if self._reconcile_metadata(video_dir, transcript_rel):
-                transcribed.append(row.id)
-            else:
-                errors.append(
-                    f"{row.id}: transcript saved to {final_path.name} but metadata.json could not be updated"
-                )
+                    errors.append(
+                        f"{row.id}: transcript saved to {final_path.name} but metadata.json could not be updated"
+                    )
+            finally:
+                progress.finish_item(row.id)
 
         return TranscriptionResult(tuple(transcribed), tuple(skipped), tuple(errors))
 

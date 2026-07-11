@@ -12,6 +12,7 @@ from videodoc.core.storage import filesystem
 from videodoc.core.storage.database import VideoRow, ensure_schema, get_video, upsert_video
 from videodoc.core.utils.ffprobe import VideoProbeError, probe_video
 from videodoc.core.utils.hashing import hash_file
+from videodoc.core.utils.progress import ProgressReporter
 from videodoc.core.utils.slug import slugify
 
 
@@ -30,7 +31,8 @@ class VideoIngestionService:
         self.project_dir = project_dir
         self.config = config
 
-    def run(self) -> IngestResult:
+    def run(self, progress: ProgressReporter | None = None) -> IngestResult:
+        progress = progress or ProgressReporter()
         walk_errors: list[str] = []
         video_files = self._resolve_video_files(walk_errors)
         if not video_files:
@@ -60,101 +62,110 @@ class VideoIngestionService:
         warnings: list[str] = []
         seen_this_run: dict[str, str] = {}  # video_id -> filename, for same-run collision detection
 
-        for video_file in sorted(video_files):
+        sorted_video_files = sorted(video_files)
+        total = len(sorted_video_files)
+        for index, video_file in enumerate(sorted_video_files):
+            progress.start_item(video_file.name, index, total)
             try:
-                video_id = slugify(video_file.stem)
-            except ValueError as exc:
-                errors.append(f"{video_file.name}: {exc}")
-                continue
+                try:
+                    video_id = slugify(video_file.stem)
+                except ValueError as exc:
+                    errors.append(f"{video_file.name}: {exc}")
+                    continue
 
-            existing_row = get_video(db_path, video_id)
-            # A collision is any case where video_id already means a
-            # *different* file -- either earlier in this same run, or from a
-            # previous run's project.db. The normal reingest-on-hash-change
-            # case (same filename, different content) is explicitly not a
-            # collision. This is fatal (stops the run): earlier videos
-            # already committed in this run stay committed -- each one's DB
-            # upsert + metadata.json write is independently idempotent, this
-            # is a safe partial completion, not a rollback.
-            if video_id in seen_this_run and seen_this_run[video_id] != video_file.name:
-                raise VideoIdCollisionError(
-                    f"'{video_file.name}' and '{seen_this_run[video_id]}' both resolve to video id "
-                    f"'{video_id}' in this run -- rename one of the files to avoid ambiguity."
+                existing_row = get_video(db_path, video_id)
+                # A collision is any case where video_id already means a
+                # *different* file -- either earlier in this same run, or from a
+                # previous run's project.db. The normal reingest-on-hash-change
+                # case (same filename, different content) is explicitly not a
+                # collision. This is fatal (stops the run): earlier videos
+                # already committed in this run stay committed -- each one's DB
+                # upsert + metadata.json write is independently idempotent, this
+                # is a safe partial completion, not a rollback.
+                if video_id in seen_this_run and seen_this_run[video_id] != video_file.name:
+                    raise VideoIdCollisionError(
+                        f"'{video_file.name}' and '{seen_this_run[video_id]}' both resolve to video id "
+                        f"'{video_id}' in this run -- rename one of the files to avoid ambiguity."
+                    )
+                if existing_row is not None and existing_row.filename != video_file.name:
+                    raise VideoIdCollisionError(
+                        f"'{video_file.name}' resolves to video id '{video_id}', which is already "
+                        f"registered in {db_path.name} for a different file ('{existing_row.filename}') -- "
+                        f"rename one of the files to avoid ambiguity."
+                    )
+                seen_this_run[video_id] = video_file.name
+
+                try:
+                    file_hash = hash_file(
+                        video_file,
+                        progress_callback=lambda fraction, name=video_file.name: progress.update_item(name, fraction),
+                    )
+                except OSError as exc:
+                    errors.append(f"{video_file.name}: {exc}")
+                    continue
+
+                if existing_row is not None and existing_row.file_hash == file_hash:
+                    # Unchanged: not reprocessed at all, not even probed --
+                    # this is what makes "must not be processed again" real.
+                    skipped.append(video_id)
+                    continue
+
+                try:
+                    probe = probe_video(video_file)
+                except VideoProbeError as exc:
+                    errors.append(f"{video_file.name}: {exc}")
+                    continue
+
+                video_dir = self.project_dir / self.config.paths.workdir / video_id
+                filesystem.ensure_video_workdir(video_dir)
+
+                created_at = existing_row.created_at if existing_row is not None else datetime.now(timezone.utc).isoformat()
+                title = existing_row.title if existing_row is not None else None
+
+                upsert_video(
+                    db_path,
+                    VideoRow(
+                        id=video_id,
+                        filename=video_file.name,
+                        title=title,
+                        duration_seconds=probe.duration_seconds,
+                        file_hash=file_hash,
+                        path=video_file.as_posix(),
+                        created_at=created_at,
+                    ),
                 )
-            if existing_row is not None and existing_row.filename != video_file.name:
-                raise VideoIdCollisionError(
-                    f"'{video_file.name}' resolves to video id '{video_id}', which is already "
-                    f"registered in {db_path.name} for a different file ('{existing_row.filename}') -- "
-                    f"rename one of the files to avoid ambiguity."
-                )
-            seen_this_run[video_id] = video_file.name
 
-            try:
-                file_hash = hash_file(video_file)
-            except OSError as exc:
-                errors.append(f"{video_file.name}: {exc}")
-                continue
-
-            if existing_row is not None and existing_row.file_hash == file_hash:
-                # Unchanged: not reprocessed at all, not even probed --
-                # this is what makes "must not be processed again" real.
-                skipped.append(video_id)
-                continue
-
-            try:
-                probe = probe_video(video_file)
-            except VideoProbeError as exc:
-                errors.append(f"{video_file.name}: {exc}")
-                continue
-
-            video_dir = self.project_dir / self.config.paths.workdir / video_id
-            filesystem.ensure_video_workdir(video_dir)
-
-            created_at = existing_row.created_at if existing_row is not None else datetime.now(timezone.utc).isoformat()
-            title = existing_row.title if existing_row is not None else None
-
-            upsert_video(
-                db_path,
-                VideoRow(
-                    id=video_id,
-                    filename=video_file.name,
+                workdir_rel = Path(self.config.paths.workdir) / video_id
+                VideoMetadata(
+                    video_id=video_id,
+                    video_name=video_file.name,
                     title=title,
                     duration_seconds=probe.duration_seconds,
-                    file_hash=file_hash,
-                    path=video_file.as_posix(),
-                    created_at=created_at,
-                ),
-            )
+                    language=self.config.project.language,
+                    hash=file_hash,
+                    format=probe.format_name,
+                    width=probe.width,
+                    height=probe.height,
+                    codec=probe.codec_name,
+                    audio_path=(workdir_rel / "audio").as_posix(),
+                    transcript_path=(workdir_rel / "transcript").as_posix(),
+                    frames_path=(workdir_rel / "frames").as_posix(),
+                    ocr_path=(workdir_rel / "ocr").as_posix(),
+                    chunks_path=(workdir_rel / "chunks").as_posix(),
+                ).save(video_dir / "metadata.json")
 
-            workdir_rel = Path(self.config.paths.workdir) / video_id
-            VideoMetadata(
-                video_id=video_id,
-                video_name=video_file.name,
-                title=title,
-                duration_seconds=probe.duration_seconds,
-                language=self.config.project.language,
-                hash=file_hash,
-                format=probe.format_name,
-                width=probe.width,
-                height=probe.height,
-                codec=probe.codec_name,
-                audio_path=(workdir_rel / "audio").as_posix(),
-                transcript_path=(workdir_rel / "transcript").as_posix(),
-                frames_path=(workdir_rel / "frames").as_posix(),
-                ocr_path=(workdir_rel / "ocr").as_posix(),
-                chunks_path=(workdir_rel / "chunks").as_posix(),
-            ).save(video_dir / "metadata.json")
-
-            if existing_row is None:
-                ingested.append(video_id)
-            else:
-                reingested.append(video_id)
-                warnings.append(
-                    f"{video_id}: video content changed and was reingested -- "
-                    f"workdir/{video_id}/{{audio,frames,transcript,ocr,chunks}} may still contain "
-                    f"artifacts from the previous version (never deleted automatically); re-run the "
-                    f"relevant pipeline phase(s) to refresh them."
-                )
+                if existing_row is None:
+                    ingested.append(video_id)
+                else:
+                    reingested.append(video_id)
+                    warnings.append(
+                        f"{video_id}: video content changed and was reingested -- "
+                        f"workdir/{video_id}/{{audio,frames,transcript,ocr,chunks}} may still contain "
+                        f"artifacts from the previous version (never deleted automatically); re-run the "
+                        f"relevant pipeline phase(s) to refresh them."
+                    )
+            finally:
+                progress.finish_item(video_file.name)
 
         return IngestResult(
             database_path=db_path,

@@ -31,7 +31,7 @@ def _extract_audio_via_cli(monkeypatch, project_name):
     monkeypatch.setattr(audio_extraction_service_module.shutil, "which", lambda tool: r"C:\fake\ffmpeg.exe")
     monkeypatch.setattr(
         audio_extraction_service_module, "extract_audio",
-        lambda video_path, output_path: output_path.write_bytes(b"RIFF....WAVEfmt "),
+        lambda video_path, output_path, **kwargs: output_path.write_bytes(b"RIFF....WAVEfmt "),
     )
     result = runner.invoke(app, ["extract-audio", project_name])
     assert result.exit_code == 0
@@ -44,7 +44,7 @@ def _fake_results():
 def _stub_transcription(monkeypatch, fn=None):
     monkeypatch.setattr(transcription_service_module, "load_whisper_model", lambda model_name: object())
 
-    def default(model, audio_path, *, language, word_timestamps):
+    def default(model, audio_path, *, language, word_timestamps, progress_callback=None):
         return _fake_results()
 
     monkeypatch.setattr(transcription_service_module, "transcribe_audio", fn or default)
@@ -105,7 +105,7 @@ def test_transcribe_per_video_error_warns_without_failing(tmp_path, monkeypatch)
     _ingest_via_cli(monkeypatch, "demo")
     _extract_audio_via_cli(monkeypatch, "demo")
 
-    def failing_transcribe(model, audio_path, *, language, word_timestamps):
+    def failing_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None):
         raise TranscriptionError("corrupt audio")
 
     _stub_transcription(monkeypatch, failing_transcribe)

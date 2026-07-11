@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 class TranscriptionError(Exception):
@@ -50,22 +50,33 @@ def load_whisper_model(model_name: str) -> Any:
         raise TranscriptionError(f"Could not load Whisper model '{model_name}': {exc}") from exc
 
 
-def transcribe_audio(model: Any, audio_path: Path, *, language: str, word_timestamps: bool) -> list[TranscriptSegmentResult]:
+def transcribe_audio(
+    model: Any,
+    audio_path: Path,
+    *,
+    language: str,
+    word_timestamps: bool,
+    progress_callback: Callable[[float], None] | None = None,
+) -> list[TranscriptSegmentResult]:
     """Transcribes a single audio file with an already-loaded model.
 
     model.transcribe() returns (segments, info): a lazy generator plus
-    summary info. info is discarded -- language is forced by config, not
-    auto-detected, so nothing in it is needed here. The generator is fully
-    consumed inside the try block, since faster-whisper can raise mid-
-    iteration, not only on the initial call.
+    summary info. info.duration is the only field used -- language is
+    forced by config, not auto-detected, so nothing else in info is needed
+    here; it's what turns each segment's end timestamp into a 0..1 fraction
+    for progress_callback. The generator is fully consumed inside the try
+    block, since faster-whisper can raise mid-iteration, not only on the
+    initial call.
 
     confidence is approximated as exp(avg_logprob) (avg_logprob is a
     log-probability, typically <= 0, so this lands in (0, 1]) -- faster-
     whisper does not expose a direct 0-1 "confidence" field itself."""
     try:
-        segments_gen, _info = model.transcribe(str(audio_path), language=language, word_timestamps=word_timestamps)
+        segments_gen, info = model.transcribe(str(audio_path), language=language, word_timestamps=word_timestamps)
         results = []
         for segment in segments_gen:
+            if progress_callback is not None and info.duration:
+                progress_callback(min(1.0, float(segment.end) / info.duration))
             text = segment.text.strip()
             if not text:
                 # A silence/music/non-speech interval can yield a segment

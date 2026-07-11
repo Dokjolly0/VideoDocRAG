@@ -1,6 +1,7 @@
 import typer
 
 from videodoc.cli.output import console, print_error, print_warning, render_summary_table
+from videodoc.cli.progress import RichProgressReporter
 from videodoc.core.errors import (
     DatabaseError,
     InvalidConfigError,
@@ -15,7 +16,8 @@ from videodoc.core.services.transcription_service import TranscriptionService
 def transcribe_command(project: str = typer.Argument(..., help="Project name or path")) -> None:
     try:
         service = ProjectService.load(project)
-        result = TranscriptionService(service.project_dir, service.config).run()
+        with RichProgressReporter(console) as reporter:
+            result = TranscriptionService(service.project_dir, service.config).run(progress=reporter)
     except (
         ProjectNotFoundError,
         InvalidConfigError,

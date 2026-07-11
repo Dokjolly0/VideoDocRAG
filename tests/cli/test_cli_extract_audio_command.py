@@ -31,7 +31,7 @@ def _available_ffmpeg(monkeypatch):
 
 
 def _stub_extract(monkeypatch, fn=None):
-    def default(video_path, output_path):
+    def default(video_path, output_path, **kwargs):
         output_path.write_bytes(b"RIFF....WAVEfmt ")
 
     monkeypatch.setattr(audio_extraction_service_module, "extract_audio", fn or default)
@@ -80,7 +80,7 @@ def test_extract_audio_per_video_error_warns_without_failing(tmp_path, monkeypat
     _ingest_via_cli(monkeypatch, "demo")
     _available_ffmpeg(monkeypatch)
 
-    def failing_extract(video_path, output_path):
+    def failing_extract(video_path, output_path, **kwargs):
         raise AudioExtractionError("unsupported codec")
 
     _stub_extract(monkeypatch, failing_extract)

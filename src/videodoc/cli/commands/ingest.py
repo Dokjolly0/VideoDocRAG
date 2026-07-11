@@ -1,6 +1,7 @@
 import typer
 
 from videodoc.cli.output import console, print_error, print_warning, render_summary_table
+from videodoc.cli.progress import RichProgressReporter
 from videodoc.core.errors import (
     DatabaseError,
     ExternalToolNotFoundError,
@@ -16,7 +17,8 @@ from videodoc.core.services.project_service import ProjectService
 def ingest_command(project: str = typer.Argument(..., help="Project name or path")) -> None:
     try:
         service = ProjectService.load(project)
-        result = VideoIngestionService(service.project_dir, service.config).run()
+        with RichProgressReporter(console) as reporter:
+            result = VideoIngestionService(service.project_dir, service.config).run(progress=reporter)
     except (
         ProjectNotFoundError,
         InvalidConfigError,

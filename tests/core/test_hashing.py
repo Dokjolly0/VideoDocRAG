@@ -24,3 +24,23 @@ def test_hash_file_chunking_does_not_change_result(tmp_path):
 def test_hash_file_missing_raises_oserror(tmp_path):
     with pytest.raises(OSError):
         hash_file(tmp_path / "does-not-exist.bin")
+
+
+def test_hash_file_reports_increasing_progress(tmp_path):
+    path = tmp_path / "big.bin"
+    path.write_bytes(b"x" * 300)
+
+    fractions = []
+    hash_file(path, chunk_size=100, progress_callback=fractions.append)
+
+    assert fractions == [pytest.approx(1 / 3), pytest.approx(2 / 3), pytest.approx(1.0)]
+
+
+def test_hash_file_empty_file_never_calls_progress_callback(tmp_path):
+    path = tmp_path / "empty.bin"
+    path.write_bytes(b"")
+
+    fractions = []
+    hash_file(path, progress_callback=fractions.append)
+
+    assert fractions == []

@@ -125,3 +125,44 @@ def test_transcribe_audio_raises_when_transcribe_call_itself_fails(tmp_path):
 
     with pytest.raises(TranscriptionError):
         transcribe_audio(RaisingModel(), tmp_path / "a.wav", language="it", word_timestamps=False)
+
+
+class _FakeModelWithDuration:
+    def __init__(self, segments, duration):
+        self._segments = segments
+        self._duration = duration
+
+    def transcribe(self, audio_path, **kwargs):
+        return iter(self._segments), types.SimpleNamespace(duration=self._duration)
+
+
+def test_transcribe_audio_reports_progress_as_fraction_of_duration(tmp_path):
+    segments = [
+        _FakeSegment(0.0, 2.5, "Ciao", -0.1),
+        _FakeSegment(2.5, 5.0, "benvenuti", -0.1),
+    ]
+    model = _FakeModelWithDuration(segments, duration=5.0)
+
+    fractions = []
+    transcribe_audio(
+        model, tmp_path / "a.wav", language="it", word_timestamps=False,
+        progress_callback=fractions.append,
+    )
+
+    assert fractions == [0.5, 1.0]
+
+
+def test_transcribe_audio_progress_callback_not_required(tmp_path):
+    """info without a usable duration (0/None) must never be divided by --
+    progress_callback is simply never invoked, transcription still succeeds."""
+    segments = [_FakeSegment(0.0, 1.0, "hi", -0.1)]
+    model = _FakeModelWithDuration(segments, duration=0.0)
+
+    fractions = []
+    results = transcribe_audio(
+        model, tmp_path / "a.wav", language="it", word_timestamps=False,
+        progress_callback=fractions.append,
+    )
+
+    assert fractions == []
+    assert len(results) == 1

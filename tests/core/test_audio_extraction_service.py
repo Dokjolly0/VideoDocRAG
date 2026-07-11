@@ -57,7 +57,7 @@ def _available_ffmpeg(monkeypatch):
 
 
 def _stub_extract(monkeypatch, fn=None):
-    def default(video_path, output_path):
+    def default(video_path, output_path, **kwargs):
         output_path.write_bytes(b"RIFF....WAVEfmt ")
 
     monkeypatch.setattr(audio_extraction_service_module, "extract_audio", fn or default)
@@ -135,7 +135,7 @@ def test_skip_when_wav_exists_and_metadata_already_correct(tmp_path, monkeypatch
 
     call_count = {"n": 0}
 
-    def counting_extract(video_path, output_path):
+    def counting_extract(video_path, output_path, **kwargs):
         call_count["n"] += 1
         output_path.write_bytes(b"RIFF")
 
@@ -162,7 +162,7 @@ def test_skip_reconciles_stale_metadata_placeholder(tmp_path, monkeypatch):
     _available_ffmpeg(monkeypatch)
 
     call_count = {"n": 0}
-    _stub_extract(monkeypatch, lambda video_path, output_path: call_count.__setitem__("n", call_count["n"] + 1))
+    _stub_extract(monkeypatch, lambda video_path, output_path, **kwargs: call_count.__setitem__("n", call_count["n"] + 1))
 
     result = AudioExtractionService(project_dir, config).run()
 
@@ -180,7 +180,7 @@ def test_one_bad_video_does_not_block_others(tmp_path, monkeypatch):
     _seed_video(project_dir, config, video_id="good", filename="Good.mp4")
     _available_ffmpeg(monkeypatch)
 
-    def selective_extract(video_path, output_path):
+    def selective_extract(video_path, output_path, **kwargs):
         if video_path.name == "Bad.mp4":
             raise AudioExtractionError("unsupported codec")
         output_path.write_bytes(b"RIFF")
@@ -204,7 +204,7 @@ def test_partial_ffmpeg_failure_leaves_no_stray_wav(tmp_path, monkeypatch):
     _, video_dir = _seed_video(project_dir, config)
     _available_ffmpeg(monkeypatch)
 
-    def partial_then_fail(video_path, output_path):
+    def partial_then_fail(video_path, output_path, **kwargs):
         output_path.write_bytes(b"RIFF partial")
         raise AudioExtractionError("ffmpeg killed mid-write")
 

@@ -76,7 +76,7 @@ def _stub_load_model(monkeypatch, fn=None):
 
 
 def _stub_transcribe(monkeypatch, fn=None):
-    def default(model, audio_path, *, language, word_timestamps):
+    def default(model, audio_path, *, language, word_timestamps, progress_callback=None):
         return _fake_results()
 
     monkeypatch.setattr(transcription_service_module, "transcribe_audio", fn or default)
@@ -250,7 +250,7 @@ def test_skip_when_transcript_exists_call_count_zero(tmp_path, monkeypatch):
 
     call_count = {"n": 0}
 
-    def counting_transcribe(model, audio_path, *, language, word_timestamps):
+    def counting_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None):
         call_count["n"] += 1
         return _fake_results()
 
@@ -366,7 +366,7 @@ def test_one_bad_video_does_not_block_others(tmp_path, monkeypatch):
     _seed_video(project_dir, config, video_id="good", filename="Good.mp4")
     _stub_load_model(monkeypatch)
 
-    def selective_transcribe(model, audio_path, *, language, word_timestamps):
+    def selective_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None):
         if audio_path.name == "bad.wav":
             raise TranscriptionError("corrupt audio")
         return _fake_results()
