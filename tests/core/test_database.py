@@ -6,11 +6,14 @@ import pytest
 
 from videodoc.core.errors import DatabaseError
 from videodoc.core.storage.database import (
+    FrameRow,
     TranscriptSegmentRow,
     VideoRow,
     ensure_schema,
     get_video,
+    list_transcript_segments,
     list_videos,
+    replace_frames,
     replace_transcript_segments,
     upsert_video,
 )
@@ -190,3 +193,97 @@ def test_concurrent_short_writes_do_not_raise_operational_error(tmp_path):
         list(executor.map(write_one, range(24)))
 
     assert len(list_videos(db_path)) == 24
+
+
+def test_list_transcript_segments_empty_when_table_missing(tmp_path):
+    db_path = tmp_path / "project.db"
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("CREATE TABLE unrelated (id TEXT)")
+    assert list_transcript_segments(db_path, "demo") == []
+
+
+def test_list_transcript_segments_empty_when_video_has_none(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    assert list_transcript_segments(db_path, "demo") == []
+
+
+def test_list_transcript_segments_returns_only_requested_video_ordered_by_id(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    upsert_video(db_path, _row(id="other", filename="Other.mp4"))
+    replace_transcript_segments(
+        db_path, "demo",
+        [_segment(id="demo_seg_0001", start_seconds=2.5, end_seconds=5.0), _segment(id="demo_seg_0000")],
+    )
+    replace_transcript_segments(db_path, "other", [_segment(id="other_seg_0000", video_id="other")])
+
+    rows = list_transcript_segments(db_path, "demo")
+    assert [r.id for r in rows] == ["demo_seg_0000", "demo_seg_0001"]
+
+
+def test_list_transcript_segments_wraps_sqlite_error(tmp_path):
+    db_path = tmp_path / "not-a-file"
+    db_path.mkdir()
+    with pytest.raises(DatabaseError):
+        list_transcript_segments(db_path, "demo")
+
+
+def _frame(**overrides) -> FrameRow:
+    defaults = dict(
+        id="demo_frame_0000", video_id="demo", timestamp_seconds=8.0,
+        image_path="workdir/demo/frames/frame_0001.jpg", perceptual_hash="abc123",
+    )
+    defaults.update(overrides)
+    return FrameRow(**defaults)
+
+
+def _fetch_frames(db_path, video_id):
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        return conn.execute(
+            "SELECT id, video_id, timestamp_seconds, image_path, perceptual_hash, "
+            "ocr_text, ocr_confidence, contains_code FROM frames WHERE video_id = ? ORDER BY id",
+            (video_id,),
+        ).fetchall()
+
+
+def test_ensure_schema_also_creates_frames_table(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    ensure_schema(db_path)  # idempotent
+    assert _fetch_frames(db_path, "demo") == []
+
+
+def test_replace_frames_inserts_with_ocr_fields_defaulted(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_frames(db_path, "demo", [_frame(), _frame(id="demo_frame_0001", timestamp_seconds=16.0)])
+
+    rows = _fetch_frames(db_path, "demo")
+    assert [r[0] for r in rows] == ["demo_frame_0000", "demo_frame_0001"]
+    # ocr_text/ocr_confidence stay NULL and contains_code stays 0 until a later phase (README §19/§20)
+    assert rows[0][5] is None
+    assert rows[0][6] is None
+    assert rows[0][7] == 0
+
+
+def test_replace_frames_replaces_not_appends(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_frames(db_path, "demo", [_frame()])
+    replace_frames(db_path, "demo", [_frame(perceptual_hash="updated")])
+
+    rows = _fetch_frames(db_path, "demo")
+    assert len(rows) == 1
+    assert rows[0][4] == "updated"
+
+
+def test_replace_frames_wraps_sqlite_error(tmp_path):
+    db_path = tmp_path / "not-a-file"
+    db_path.mkdir()
+    with pytest.raises(DatabaseError):
+        replace_frames(db_path, "demo", [_frame()])

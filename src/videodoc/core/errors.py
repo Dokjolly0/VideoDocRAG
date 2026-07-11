@@ -49,3 +49,14 @@ class TranscriptionEngineError(VideoDocError):
 
 class InvalidTranscriptError(VideoDocError):
     """Raised when a video's transcript JSON is missing, malformed, or fails validation."""
+
+
+class InvalidFrameManifestError(VideoDocError):
+    """Raised when a video's frames.json manifest is missing, malformed, or fails validation."""
+
+
+class SceneDetectionUnavailableError(VideoDocError):
+    """Raised once, up front, when config.frames.scene_detection is enabled but the
+    'scenedetect' package (or its video backend) cannot be imported -- checked a single
+    time per run rather than once per video, mirroring the shutil.which("ffmpeg") check
+    in AudioExtractionService."""

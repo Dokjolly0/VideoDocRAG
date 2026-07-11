@@ -39,6 +39,24 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
 );
 """
 
+# README §31/§30.3 -- ocr_text/ocr_confidence/contains_code stay NULL/0 until
+# the later OCR (§19) and code-detection (§20) phases fill them in; the frame
+# extraction phase (this table's only writer for now) only ever populates
+# id/video_id/timestamp_seconds/image_path/perceptual_hash.
+_CREATE_FRAMES_TABLE = """
+CREATE TABLE IF NOT EXISTS frames (
+    id TEXT PRIMARY KEY,
+    video_id TEXT NOT NULL,
+    timestamp_seconds REAL NOT NULL,
+    image_path TEXT NOT NULL,
+    perceptual_hash TEXT,
+    ocr_text TEXT,
+    ocr_confidence REAL,
+    contains_code INTEGER DEFAULT 0,
+    FOREIGN KEY(video_id) REFERENCES videos(id)
+);
+"""
+
 
 def _connect(db_path: Path) -> sqlite3.Connection:
     return sqlite3.connect(db_path, timeout=30)
@@ -65,6 +83,18 @@ class TranscriptSegmentRow:
     confidence: float | None
 
 
+@dataclass(frozen=True)
+class FrameRow:
+    id: str  # "<video_id>_frame_<0001>" -- globally unique, mirrors TranscriptSegmentRow.id
+    video_id: str
+    timestamp_seconds: float
+    image_path: str  # project-relative posix, e.g. "workdir/<id>/frames/frame_0001.jpg"
+    perceptual_hash: str | None
+    ocr_text: str | None = None  # filled by a later phase (README §19)
+    ocr_confidence: float | None = None  # filled by a later phase (README §19)
+    contains_code: bool = False  # filled by a later phase (README §20)
+
+
 def ensure_schema(db_path: Path) -> None:
     """Create every project.db table if it doesn't exist yet. Idempotent."""
     try:
@@ -77,6 +107,7 @@ def ensure_schema(db_path: Path) -> None:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(_CREATE_VIDEOS_TABLE)
             conn.execute(_CREATE_TRANSCRIPT_SEGMENTS_TABLE)
+            conn.execute(_CREATE_FRAMES_TABLE)
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot initialize schema in {db_path}: {exc}") from exc
 
@@ -178,3 +209,56 @@ def replace_transcript_segments(db_path: Path, video_id: str, segments: list[Tra
             )
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot write transcript segments for video '{video_id}' to {db_path}: {exc}") from exc
+
+
+def list_transcript_segments(db_path: Path, video_id: str) -> list[TranscriptSegmentRow]:
+    """All transcript segments for a single video, ordered by id (i.e.
+    chronologically, since ids are zero-padded sequential). Returns an empty
+    list -- never raises -- if the table doesn't exist yet or the video has
+    no segments, same "graceful empty" contract as list_videos: the frame
+    extraction service's keyword boost treats "no transcript yet" as
+    "contribute zero extra candidates", not as a structural problem."""
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            table_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='transcript_segments'"
+            ).fetchone()
+            if table_exists is None:
+                return []
+            rows = conn.execute(
+                "SELECT id, video_id, start_seconds, end_seconds, text, confidence "
+                "FROM transcript_segments WHERE video_id = ? ORDER BY id",
+                (video_id,),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot list transcript segments for video '{video_id}' in {db_path}: {exc}") from exc
+    return [TranscriptSegmentRow(*row) for row in rows]
+
+
+def replace_frames(db_path: Path, video_id: str, frames: list[FrameRow]) -> None:
+    """Full replace, not an incremental upsert: deletes any existing rows for
+    video_id, then inserts the given set, in one transaction -- mirrors
+    replace_transcript_segments exactly, including being called on both the
+    fresh-extraction path and the skip-because-already-extracted path (see
+    FrameExtractionService), so a prior transient DB failure self-heals once
+    frames.json already exists on disk."""
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.execute("DELETE FROM frames WHERE video_id = ?", (video_id,))
+            conn.executemany(
+                "INSERT INTO frames (id, video_id, timestamp_seconds, image_path, perceptual_hash, "
+                "ocr_text, ocr_confidence, contains_code) "
+                "VALUES (:id, :video_id, :timestamp_seconds, :image_path, :perceptual_hash, "
+                ":ocr_text, :ocr_confidence, :contains_code)",
+                [
+                    {
+                        "id": f.id, "video_id": f.video_id, "timestamp_seconds": f.timestamp_seconds,
+                        "image_path": f.image_path, "perceptual_hash": f.perceptual_hash,
+                        "ocr_text": f.ocr_text, "ocr_confidence": f.ocr_confidence,
+                        "contains_code": int(f.contains_code),
+                    }
+                    for f in frames
+                ],
+            )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot write frames for video '{video_id}' to {db_path}: {exc}") from exc

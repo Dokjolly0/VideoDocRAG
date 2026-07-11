@@ -3,6 +3,7 @@ import typer
 from videodoc.cli.commands import (
     doctor,
     extract_audio,
+    frames,
     ingest,
     init,
     link,
@@ -24,6 +25,7 @@ app.command("scan")(scan.scan_command)
 app.command("ingest")(ingest.ingest_command)
 app.command("extract-audio")(extract_audio.extract_audio_command)
 app.command("transcribe")(transcribe.transcribe_command)
+app.command("frames")(frames.frames_command)
 app.command("doctor")(doctor.doctor_command)
 app.command("setup")(setup.setup_command)
 

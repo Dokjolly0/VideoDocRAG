@@ -1504,6 +1504,8 @@ Estrarre più frame quando nella trascrizione compaiono parole come:
 
 Questa è spesso la strategia migliore per video tecnici.
 
+Nota implementativa: le tre strategie sopra non sono alternative — `videodoc frames` le combina tutte e tre in un'unica lista di timestamp deduplicata: l'intervallo fisso (`frames.interval_seconds`, default 8s) resta sempre la baseline garantita, i cambi scena rilevati da PySceneDetect (`ContentDetector`) e i timestamp da parola chiave si aggiungono come "boost" con priorità più alta, sostituendo un tick d'intervallo troppo vicino invece di produrre un frame ridondante. I frame vengono salvati in `workdir/<video_id>/frames/frame_NNNN.jpg` e registrati sia in `workdir/<video_id>/frames/frames.json` sia nella tabella `frames` di `project.db` (§31). Un frame "boosted" (scena o parola chiave) visivamente quasi identico al frame precedente viene scartato tramite un hash percettivo — non un dedup di contenuto, che resta compito del riconoscimento del codice (§20.3), ma solo un modo per non salvare screenshot ridondanti adiacenti. Vedi `docs/features/frame-extraction.md`.
+
 ---
 
 # 19. Fase 6 — OCR delle schermate

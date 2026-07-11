@@ -198,6 +198,32 @@ Project: corso-software-x
 
 ---
 
+## frames
+
+**Sintassi:** `videodoc frames <project> [--workers N] [--interval-seconds N] [--scene-detection|--no-scene-detection] [--keyword-boost|--no-keyword-boost]`
+**Descrizione:** Per ogni video già registrato con `ingest`, seleziona un insieme di timestamp combinando un intervallo fisso, i cambi scena rilevati da PySceneDetect e i segmenti della trascrizione (se già presente) che contengono parole chiave come "codice"/"comando"/"terminale"/"errore" (README §18.3), estrae i frame corrispondenti via FFmpeg in `workdir/<id>/frames/frame_NNNN.jpg`, calcola un hash percettivo per scartare un frame boosted quasi-identico al frame precedente, e registra tutto in `workdir/<id>/frames/frames.json` e nella tabella `frames` di `project.db`, aggiornando `metadata.json` (`frames_path`). Idempotente per presenza di `frames.json`: se esiste già, FFmpeg e PySceneDetect non vengono invocati.
+**Exit code:** 0 = successo, anche con errori per-video (estrazione o scene detection fallita su un singolo file: stampati come `Warning`, il video viene saltato, gli altri continuano). 1 = progetto sconosciuto, `config.yaml` non valido, **nessun video ancora registrato** (`ingest` mai eseguito), `ffmpeg` non disponibile in `PATH`, il pacchetto `scenedetect` non installato mentre la scene detection è attiva, o problema strutturale su `project.db`.
+**Prerequisito:** richiede `ffmpeg` in `PATH` (come `extract-audio`) e, se `scene_detection` è attivo (default), il pacchetto Python `scenedetect` (installato automaticamente come dipendenza del progetto). Il keyword boost usa la trascrizione se `videodoc transcribe` è già stato eseguito per quel video; altrimenti contribuisce zero frame extra senza generare un errore.
+**Esempio:**
+```
+$ videodoc frames corso-software-x
+Project: corso-software-x
++---------------+
+| Extracted | 8 |
+| Skipped   | 0 |
++---------------+
+
+$ videodoc frames corso-software-x
+Project: corso-software-x
++---------------+
+| Extracted | 0 |
+| Skipped   | 8 |
++---------------+
+```
+**Vedi anche:** [features/frame-extraction.md](features/frame-extraction.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

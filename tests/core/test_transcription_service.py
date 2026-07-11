@@ -442,12 +442,13 @@ def test_transcribes_against_pre_existing_db_missing_transcript_segments_table(t
     _, video_dir = _seed_video(project_dir, config)
 
     # Simulate a pre-Step-5 project.db: _seed_video's own ensure_schema()
-    # call already created transcript_segments too (it's idempotent and
-    # now provisions both tables), so drop it back out to reproduce the
-    # actual pre-existing state this regression covers.
+    # call already created transcript_segments and frames too (it's
+    # idempotent and now provisions every table), so drop them back out to
+    # reproduce the actual pre-existing state this regression covers.
     db_path = project_dir / "project.db"
     with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("DROP TABLE transcript_segments")
+        conn.execute("DROP TABLE frames")
         tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     assert {t[0] for t in tables} == {"videos"}  # confirms the simulated pre-existing state
 

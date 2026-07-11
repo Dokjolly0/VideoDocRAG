@@ -408,7 +408,41 @@ Project: corso-software-x
 
 Se nessun video ha ancora l'audio estratto (`extract-audio` non è mai stato eseguito), il comando fallisce subito (`exit code` 1) senza caricare alcun modello. Un problema di trascrizione su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0 — vedi §8 per un caso reale (libreria CUDA mancante) riscontrato durante lo sviluppo. Su GPU NVIDIA, `auto` usa CUDA, modalità batched, VAD e `beam_size: 1`; `compute_type` e `batch_size` vengono calcolati dalla VRAM dedicata libera, mai dalla memoria GPU condivisa di Windows.
 
-### 5.10 Verificare lo stato dell'ambiente (`doctor`)
+### 5.10 Estrarre i frame (screenshot) dai video di un progetto
+
+Per ogni video già registrato con `ingest`, estrae i frame in `workdir/<id>/frames/frame_NNNN.jpg` (via `ffmpeg`, vedi §1 per l'installazione) e li registra in `workdir/<id>/frames/frames.json` e nella tabella `frames` di `project.db`, aggiornando `metadata.json`:
+
+```bash
+videodoc frames corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Extracted | 8 |
+| Skipped   | 0 |
++---------------+
+```
+
+I timestamp da cui estrarre i frame combinano tre segnali: un intervallo fisso (`frames.interval_seconds`, default 8s), i cambi scena rilevati dal pacchetto Python `scenedetect` (PySceneDetect, installato automaticamente come dipendenza — nessun passo manuale aggiuntivo, a differenza di FFmpeg), e i segmenti della trascrizione che contengono parole chiave come "codice"/"comando"/"terminale"/"errore" (README §18.3) se `videodoc transcribe` è già stato eseguito per quel video. Un frame boosted (cambio scena o parola chiave) visivamente quasi identico al frame precedente viene scartato tramite un hash percettivo, per non salvare screenshot ridondanti.
+
+È idempotente per presenza di `frames.json`: rilanciandolo, i video già processati vengono saltati senza richiamare né `ffmpeg` né `scenedetect`:
+
+```bash
+videodoc frames corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Extracted | 0 |
+| Skipped   | 8 |
++---------------+
+```
+
+Se nessun video è ancora stato registrato (`ingest` non è mai stato eseguito), se `ffmpeg` non è disponibile in `PATH`, o se il pacchetto `scenedetect` non è installato mentre la scene detection è attiva (default), il comando fallisce subito (`exit code` 1) senza creare o modificare nulla. Un problema di estrazione o di scene detection su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0. La scene detection e il keyword boost si disattivano con `--no-scene-detection`/`--no-keyword-boost`; l'assenza di una trascrizione per un video non è un errore, contribuisce semplicemente zero frame extra da parole chiave.
+
+### 5.11 Verificare lo stato dell'ambiente (`doctor`)
 
 Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
 
@@ -430,7 +464,7 @@ Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode —
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
-### 5.11 Applicare le correzioni automaticamente (`setup`)
+### 5.12 Applicare le correzioni automaticamente (`setup`)
 
 Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
 
@@ -579,7 +613,7 @@ Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.all
 FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
 
 **`videodoc transcribe` fallisce con un errore che menziona `cublas` o una libreria CUDA mancante.**
-Esegui prima `videodoc doctor` (§5.10): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.11) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
+Esegui prima `videodoc doctor` (§5.11): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.12) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
 
 `faster-whisper` rileva automaticamente l'hardware disponibile e, su una macchina dove viene individuata una GPU ma mancano le librerie runtime CUDA (es. `cublas64_12.dll` su Windows), fallisce invece di ripiegare in modo pulito sulla CPU. **Dove esattamente fallisce cambia il comportamento del comando**, e dipende da un dettaglio interno di `faster-whisper`/`ctranslate2` non controllabile da questo codice:
 - Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.

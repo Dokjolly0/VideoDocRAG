@@ -187,6 +187,16 @@ class FramesSection(BaseModel):
     interval_seconds: int = Field(8, gt=0)
     scene_detection: bool = True
     keyword_boost: bool = True
+    workers: int | Literal["auto"] = "auto"
+
+    @field_validator("workers")
+    @classmethod
+    def _workers_positive_or_auto(cls, v: int | Literal["auto"]) -> int | Literal["auto"]:
+        if v == "auto":
+            return v
+        if v <= 0:
+            raise ValueError("workers must be 'auto' or a positive integer")
+        return v
 
 
 class OCRSection(BaseModel):

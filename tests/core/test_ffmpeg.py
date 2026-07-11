@@ -4,7 +4,7 @@ import subprocess
 import pytest
 
 import videodoc.core.utils.ffmpeg as ffmpeg_module
-from videodoc.core.utils.ffmpeg import AudioExtractionError, extract_audio
+from videodoc.core.utils.ffmpeg import AudioExtractionError, FrameExtractionError, extract_audio, extract_frames
 
 
 def test_extract_audio_invokes_ffmpeg_with_expected_args(tmp_path, monkeypatch):
@@ -160,3 +160,108 @@ def test_extract_audio_with_progress_passes_threads_to_ffmpeg_popen(tmp_path, mo
 
     args = captured["args"]
     assert args[args.index("-threads") + 1] == "2"
+
+
+def _stub_ffmpeg_frame_run(output_dir, pts_values):
+    """Fakes ffmpeg's real behavior for extract_frames: writes frame_NNNNN.jpg
+    files (one per pts value, in order) and returns a CompletedProcess whose
+    stderr contains matching 'pts_time:' showinfo lines."""
+
+    def fake_run(args, **kwargs):
+        for i, pts in enumerate(pts_values, start=1):
+            (output_dir / f"frame_{i:05d}.jpg").write_bytes(b"\xff\xd8fake-jpeg")
+        stderr = "\n".join(f"[Parsed_showinfo_1 @ 0x0] n:{i} pts_time:{pts}" for i, pts in enumerate(pts_values))
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr=stderr)
+
+    return fake_run
+
+
+def test_extract_frames_empty_timestamps_skips_ffmpeg(tmp_path, monkeypatch):
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run ffmpeg")))
+    assert extract_frames(tmp_path / "a.mp4", tmp_path, []) == []
+
+
+def test_extract_frames_returns_pts_path_pairs_in_order(tmp_path, monkeypatch):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", _stub_ffmpeg_frame_run(output_dir, [7.98, 16.02]))
+
+    result = extract_frames(tmp_path / "a.mp4", output_dir, [8.0, 16.0])
+
+    assert [pts for pts, _path in result] == [7.98, 16.02]
+    assert [path.name for _pts, path in result] == ["frame_00001.jpg", "frame_00002.jpg"]
+
+
+def test_extract_frames_builds_select_filter_script_and_cleans_it_up(tmp_path, monkeypatch):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        captured["filter_script_content"] = (output_dir / "select.filter").read_text(encoding="utf-8")
+        (output_dir / "frame_00001.jpg").write_bytes(b"fake")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="pts_time:8.0")
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", fake_run)
+    extract_frames(tmp_path / "a.mp4", output_dir, [8.0])
+
+    assert "-filter_script:v" in captured["args"]
+    assert "select=" in captured["filter_script_content"]
+    assert "showinfo" in captured["filter_script_content"]
+    assert not (output_dir / "select.filter").exists()  # cleaned up after the call
+
+
+def test_extract_frames_raises_on_called_process_error(tmp_path, monkeypatch):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    def _raise(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, ["ffmpeg"], stderr="unsupported codec")
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", _raise)
+    with pytest.raises(FrameExtractionError):
+        extract_frames(tmp_path / "a.mp4", output_dir, [8.0])
+
+
+def test_extract_frames_raises_on_oserror(tmp_path, monkeypatch):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    def _raise(*args, **kwargs):
+        raise OSError("binary not found")
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", _raise)
+    with pytest.raises(FrameExtractionError):
+        extract_frames(tmp_path / "a.mp4", output_dir, [8.0])
+
+
+def test_extract_frames_raises_on_pts_file_count_mismatch(tmp_path, monkeypatch):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    def fake_run(args, **kwargs):
+        (output_dir / "frame_00001.jpg").write_bytes(b"fake")
+        (output_dir / "frame_00002.jpg").write_bytes(b"fake")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="pts_time:8.0")  # only one pts for two files
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", fake_run)
+    with pytest.raises(FrameExtractionError):
+        extract_frames(tmp_path / "a.mp4", output_dir, [8.0, 16.0])
+
+
+def test_extract_frames_passes_threads(tmp_path, monkeypatch):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        (output_dir / "frame_00001.jpg").write_bytes(b"fake")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="pts_time:8.0")
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", fake_run)
+    extract_frames(tmp_path / "a.mp4", output_dir, [8.0], threads=4)
+
+    args = captured["args"]
+    assert args[args.index("-threads") + 1] == "4"
