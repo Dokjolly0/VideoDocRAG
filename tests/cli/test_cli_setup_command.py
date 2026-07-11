@@ -31,6 +31,11 @@ def test_setup_pip_fix_applies_without_prompting(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor_service_module, "get_cuda_device_count", lambda: 1)
     monkeypatch.setattr(doctor_service_module, "probe_cublas_loadable", lambda name: (_ for _ in ()).throw(CudaProbeError("boom")))
     monkeypatch.setattr(setup_service_module, "run_fix_command", lambda command, **k: "installed")
+    # Forced away from the real OS: on an actual macOS runner, platform.system()
+    # would return "Darwin" and _check_cuda short-circuits to "ok" before ever
+    # calling probe_cublas_loadable, making the pip fix this test targets
+    # unreachable regardless of the stub above.
+    monkeypatch.setattr(doctor_service_module.platform, "system", lambda: "Windows")
     _env(tmp_path, monkeypatch)
 
     # No typer.confirm stub provided -- if the code wrongly prompted for a

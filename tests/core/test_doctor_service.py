@@ -244,6 +244,11 @@ def test_has_errors_false_when_only_warnings_or_ok(tmp_path, monkeypatch):
     def raising(name):
         raise CudaProbeError("boom")
 
+    # Isolates this test to the one thing it's meant to check (a CUDA
+    # warning alone doesn't count as an error) -- without stubbing FFmpeg,
+    # this depended on the test machine happening to have it installed,
+    # which is not guaranteed on a clean CI runner.
+    monkeypatch.setattr(doctor_service_module.shutil, "which", lambda tool: f"/usr/bin/{tool}")
     monkeypatch.setattr(doctor_service_module, "get_cuda_device_count", lambda: 1)
     monkeypatch.setattr(doctor_service_module, "probe_cublas_loadable", raising)
     result = DoctorService(platform_name="Windows", registry=ProjectRegistry(tmp_path / "r.json"), projects_home=tmp_path).run()

@@ -35,6 +35,11 @@ def test_doctor_exit_code_1_when_any_error(tmp_path, monkeypatch):
 def test_doctor_warning_alone_keeps_exit_code_0(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor_service_module.shutil, "which", lambda tool: f"/usr/bin/{tool}")
     monkeypatch.setattr(doctor_service_module, "get_cuda_device_count", lambda: 1)
+    # Forced away from the real OS: on an actual macOS runner, platform.system()
+    # would return "Darwin" and _check_cuda short-circuits to "ok" before ever
+    # calling probe_cublas_loadable, making the warning this test targets
+    # unreachable regardless of the stub below.
+    monkeypatch.setattr(doctor_service_module.platform, "system", lambda: "Windows")
 
     def raising(name):
         from videodoc.core.utils.cuda import CudaProbeError
