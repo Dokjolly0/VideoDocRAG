@@ -1,6 +1,6 @@
 import typer
 
-from videodoc.cli.output import console, print_error, print_warning
+from videodoc.cli.output import console, print_error, print_warning, render_summary_table
 from videodoc.core.errors import (
     DatabaseError,
     ExternalToolNotFoundError,
@@ -29,10 +29,11 @@ def ingest_command(project: str = typer.Argument(..., help="Project name or path
         raise typer.Exit(code=1)
 
     console.print(f"Project: {service.config.project.slug}")
-    console.print(
-        f"Videos ingested: {len(result.ingested)}, reingested (changed): {len(result.reingested)}, "
-        f"skipped (unchanged): {len(result.skipped)}"
-    )
+    render_summary_table([
+        ("Ingested", str(len(result.ingested))),
+        ("Reingested", str(len(result.reingested))),
+        ("Skipped", str(len(result.skipped))),
+    ])
     console.print(f"Database updated: {result.database_path.name}")
 
     for warning in result.warnings:

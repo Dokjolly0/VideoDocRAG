@@ -101,13 +101,16 @@ C:\Users\utente\VideoDocRAG\projects\corso-software-x
 ```
 $ videodoc scan corso-software-x
 Project: corso-software-x
-Videos: 8 found
-Attachments: 3 found
-Codebase: present (42 files)
++----------------------------------+
+| Videos      | 8 found            |
+| Attachments | 3 found            |
+| Codebase    | present (42 files) |
++----------------------------------+
 Excluded directories: .git, node_modules, __pycache__, dist, build, ...
 Excluded file patterns: .DS_Store
 Sources manifest updated: sources.yaml
 ```
+(La tabella usa caratteri box-drawing Unicode su un terminale che li supporta; l'esempio sopra mostra il fallback ASCII di Rich per terminali Windows legacy — entrambi renderizzano lo stesso contenuto.)
 **Vedi anche:** [features/scan.md](features/scan.md), [features/external-source-paths.md](features/external-source-paths.md)
 
 ---
@@ -122,12 +125,20 @@ Sources manifest updated: sources.yaml
 ```
 $ videodoc ingest corso-software-x
 Project: corso-software-x
-Videos ingested: 8, reingested (changed): 0, skipped (unchanged): 0
++----------------+
+| Ingested   | 8 |
+| Reingested | 0 |
+| Skipped    | 0 |
++----------------+
 Database updated: project.db
 
 $ videodoc ingest corso-software-x
 Project: corso-software-x
-Videos ingested: 0, reingested (changed): 1, skipped (unchanged): 7
++----------------+
+| Ingested   | 0 |
+| Reingested | 1 |
+| Skipped    | 7 |
++----------------+
 Database updated: project.db
 Warning: workshop-05: video content changed and was reingested -- workdir/workshop-05/{audio,frames,transcript,ocr,chunks} may still contain artifacts from the previous version (never deleted automatically); re-run the relevant pipeline phase(s) to refresh them.
 ```
@@ -145,11 +156,17 @@ Warning: workshop-05: video content changed and was reingested -- workdir/worksh
 ```
 $ videodoc extract-audio corso-software-x
 Project: corso-software-x
-Audio extracted: 8, skipped (already extracted): 0
++---------------+
+| Extracted | 8 |
+| Skipped   | 0 |
++---------------+
 
 $ videodoc extract-audio corso-software-x
 Project: corso-software-x
-Audio extracted: 0, skipped (already extracted): 8
++---------------+
+| Extracted | 0 |
+| Skipped   | 8 |
++---------------+
 ```
 **Vedi anche:** [features/audio-extraction.md](features/audio-extraction.md)
 
@@ -165,11 +182,17 @@ Audio extracted: 0, skipped (already extracted): 8
 ```
 $ videodoc transcribe corso-software-x
 Project: corso-software-x
-Transcribed: 8, skipped (already transcribed): 0
++-----------------+
+| Transcribed | 8 |
+| Skipped     | 0 |
++-----------------+
 
 $ videodoc transcribe corso-software-x
 Project: corso-software-x
-Transcribed: 0, skipped (already transcribed): 8
++-----------------+
+| Transcribed | 0 |
+| Skipped     | 8 |
++-----------------+
 ```
 **Vedi anche:** [features/transcription.md](features/transcription.md)
 
@@ -183,14 +206,15 @@ Transcribed: 0, skipped (already transcribed): 8
 **Esempio:**
 ```
 $ videodoc doctor
-Python version: 3.13.14 (>= 3.11 required)
-FFmpeg (ffprobe + ffmpeg): both found on PATH
-faster-whisper: importable
-GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
-Project registry: 3 project(s) registered -- C:\Users\utente\AppData\Local\videodoc\registry.json (default location)
-Default projects folder: C:\Users\utente\VideoDocRAG\projects is writable (default location)
+OK    Python version: 3.13.14 (>= 3.11 required)
+OK    FFmpeg (ffprobe + ffmpeg): both found on PATH
+OK    faster-whisper: importable
+OK    GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+OK    Project registry: 3 project(s) registered -- C:\Users\utente\AppData\Local\videodoc\registry.json (default location)
+OK    Default projects folder: C:\Users\utente\VideoDocRAG\projects is writable (default location)
 6 OK, 0 warning(s), 0 error(s).
 ```
+(Le parole di stato `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode — verificato che simboli come ✓/⚠ causano un crash reale su alcune console Windows legacy.)
 **Vedi anche:** [features/doctor-setup.md](features/doctor-setup.md)
 
 ---
@@ -203,11 +227,17 @@ Default projects folder: C:\Users\utente\VideoDocRAG\projects is writable (defau
 **Esempio:**
 ```
 $ videodoc setup
-Warning: GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
+OK    Python version: 3.13.14 (>= 3.11 required)
+OK    FFmpeg (ffprobe + ffmpeg): both found on PATH
+OK    faster-whisper: importable
+WARN  GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
   Applying fix for 'GPU / CUDA': <venv>\Scripts\python.exe -m pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
   Applied: Successfully installed nvidia-cublas-cu12-... nvidia-cudnn-cu12-...
-  On Windows the pip packages alone are not enough -- also add ... to PATH for the session (see RUN.md).
+  On Windows the pip packages alone are not enough -- also run this in your PowerShell session before 'videodoc transcribe' (see RUN.md): $env:PATH = "<venv>\Lib\site-packages\nvidia\cublas\bin;<venv>\Lib\site-packages\nvidia\cudnn\bin;$env:PATH"
+OK    Project registry: 3 project(s) registered -- ...
+OK    Default projects folder: ... is writable
 Re-checking automatically-fixed items...
-GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+WARN  GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
 ```
+(In questo esempio il solo `pip install` non risolve ancora — resta il passaggio manuale del `PATH`, mai automatizzato da `setup`; vedi `RUN.md` §8.)
 **Vedi anche:** [features/doctor-setup.md](features/doctor-setup.md)

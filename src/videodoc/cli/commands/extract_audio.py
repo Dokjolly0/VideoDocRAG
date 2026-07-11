@@ -1,6 +1,6 @@
 import typer
 
-from videodoc.cli.output import console, print_error, print_warning
+from videodoc.cli.output import console, print_error, print_warning, render_summary_table
 from videodoc.core.errors import (
     DatabaseError,
     ExternalToolNotFoundError,
@@ -27,7 +27,10 @@ def extract_audio_command(project: str = typer.Argument(..., help="Project name 
         raise typer.Exit(code=1)
 
     console.print(f"Project: {service.config.project.slug}")
-    console.print(f"Audio extracted: {len(result.extracted)}, skipped (already extracted): {len(result.skipped)}")
+    render_summary_table([
+        ("Extracted", str(len(result.extracted))),
+        ("Skipped", str(len(result.skipped))),
+    ])
 
     for error in result.errors:
         print_warning(error)

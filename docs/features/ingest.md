@@ -33,7 +33,11 @@
 ```bash
 videodoc ingest corso-software-x
 # Project: corso-software-x
-# Videos ingested: 3, reingested (changed): 0, skipped (unchanged): 5
+# +----------------+
+# | Ingested   | 3 |
+# | Reingested | 0 |
+# | Skipped    | 5 |
+# +----------------+
 # Database updated: project.db
 ```
 
@@ -42,7 +46,11 @@ A per-video problem or a reingest both surface as warnings, never as a failure:
 ```bash
 videodoc ingest corso-software-x
 # Project: corso-software-x
-# Videos ingested: 0, reingested (changed): 1, skipped (unchanged): 7
+# +----------------+
+# | Ingested   | 0 |
+# | Reingested | 1 |
+# | Skipped    | 7 |
+# +----------------+
 # Database updated: project.db
 # Warning: workshop-05: video content changed and was reingested -- workdir/workshop-05/{audio,frames,transcript,ocr,chunks} may still contain artifacts from the previous version (never deleted automatically); re-run the relevant pipeline phase(s) to refresh them.
 ```

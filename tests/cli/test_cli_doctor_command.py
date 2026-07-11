@@ -29,7 +29,7 @@ def test_doctor_exit_code_1_when_any_error(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
-    assert "Error:" in result.stdout
+    assert "ERROR" in result.stdout
 
 
 def test_doctor_warning_alone_keeps_exit_code_0(tmp_path, monkeypatch):
@@ -46,4 +46,4 @@ def test_doctor_warning_alone_keeps_exit_code_0(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
-    assert "Warning:" in result.stdout
+    assert "WARN" in result.stdout

@@ -1,6 +1,6 @@
 import typer
 
-from videodoc.cli.output import console, print_error, print_warning
+from videodoc.cli.output import console, print_error, print_warning, render_summary_table
 from videodoc.core.errors import (
     DatabaseError,
     InvalidConfigError,
@@ -27,7 +27,10 @@ def transcribe_command(project: str = typer.Argument(..., help="Project name or 
         raise typer.Exit(code=1)
 
     console.print(f"Project: {service.config.project.slug}")
-    console.print(f"Transcribed: {len(result.transcribed)}, skipped (already transcribed): {len(result.skipped)}")
+    render_summary_table([
+        ("Transcribed", str(len(result.transcribed))),
+        ("Skipped", str(len(result.skipped))),
+    ])
 
     for error in result.errors:
         print_warning(error)

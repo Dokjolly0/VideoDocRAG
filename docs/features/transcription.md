@@ -40,11 +40,17 @@ Additionally, `transcript_segments.id` is a single global `TEXT PRIMARY KEY` (no
 ```bash
 videodoc transcribe corso-software-x
 # Project: corso-software-x
-# Transcribed: 8, skipped (already transcribed): 0
+# +-----------------+
+# | Transcribed | 8 |
+# | Skipped     | 0 |
+# +-----------------+
 
 videodoc transcribe corso-software-x
 # Project: corso-software-x
-# Transcribed: 0, skipped (already transcribed): 8
+# +-----------------+
+# | Transcribed | 0 |
+# | Skipped     | 8 |
+# +-----------------+
 ```
 
 ## Tests

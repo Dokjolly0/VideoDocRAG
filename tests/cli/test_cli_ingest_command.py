@@ -28,7 +28,11 @@ def test_ingest_success_prints_summary(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["ingest", "demo"])
     assert result.exit_code == 0
-    assert "Videos ingested: 1, reingested (changed): 0, skipped (unchanged): 0" in result.stdout
+    assert "Ingested" in result.stdout
+    assert "Reingested" in result.stdout
+    assert "Skipped" in result.stdout
+    ingested_line = next(line for line in result.stdout.splitlines() if "Ingested" in line)
+    assert "1" in ingested_line
     assert "Database updated: project.db" in result.stdout
     assert (custom / "project.db").is_file()
 

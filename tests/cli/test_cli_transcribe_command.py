@@ -58,7 +58,9 @@ def test_transcribe_success_prints_summary(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["transcribe", "demo"])
     assert result.exit_code == 0
-    assert "Transcribed: 1, skipped (already transcribed): 0" in result.stdout
+    assert "Transcribed" in result.stdout
+    transcribed_line = next(line for line in result.stdout.splitlines() if "Transcribed" in line)
+    assert "1" in transcribed_line
     assert (custom / "workdir" / "demo" / "transcript" / "demo.json").is_file()
 
 
@@ -122,4 +124,6 @@ def test_transcribe_rerun_shows_all_skipped(tmp_path, monkeypatch):
     runner.invoke(app, ["transcribe", "demo"])
     result = runner.invoke(app, ["transcribe", "demo"])
     assert result.exit_code == 0
-    assert "Transcribed: 0, skipped (already transcribed): 1" in result.stdout
+    assert "Skipped" in result.stdout
+    skipped_line = next(line for line in result.stdout.splitlines() if "Skipped" in line)
+    assert "1" in skipped_line

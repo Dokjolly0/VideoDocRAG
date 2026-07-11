@@ -1,6 +1,6 @@
 import typer
 
-from videodoc.cli.output import console, print_error, print_warning
+from videodoc.cli.output import console, print_error, print_warning, render_summary_table
 from videodoc.core.errors import InvalidConfigError, ProjectNotFoundError
 from videodoc.core.services.project_service import ProjectService
 from videodoc.core.services.scan_service import SourcePathReport, SourceScanService
@@ -19,12 +19,14 @@ def scan_command(project: str = typer.Argument(..., help="Project name or path")
     def _suffix(report: SourcePathReport) -> str:
         return f" (external: {report.resolved_path})" if report.is_external else ""
 
-    console.print(f"Videos: {len(result.manifest.videos)} found{_suffix(result.videos_report)}")
-    console.print(f"Attachments: {len(result.manifest.attachments)} found{_suffix(result.attachments_report)}")
-
     cb = result.manifest.codebase
     label = f"present ({len(cb.files)} files)" if cb.present else "not present"
-    console.print(f"Codebase: {label}{_suffix(result.codebase_report)}")
+
+    render_summary_table([
+        ("Videos", f"{len(result.manifest.videos)} found{_suffix(result.videos_report)}"),
+        ("Attachments", f"{len(result.manifest.attachments)} found{_suffix(result.attachments_report)}"),
+        ("Codebase", f"{label}{_suffix(result.codebase_report)}"),
+    ])
 
     for name, report in (
         ("videos", result.videos_report),

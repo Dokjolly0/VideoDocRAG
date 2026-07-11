@@ -4,6 +4,7 @@ import os
 import platform
 import shutil
 import sys
+import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -159,12 +160,21 @@ class DoctorService:
             # (verified in Step 5) -- only that one video's transcription
             # fails, exit code stays 0. See RUN.md §8 for the real-world
             # incident this check exists to catch before it surprises a user.
-            fix_description = (
-                "On Windows the pip packages alone are not enough -- also add "
-                "<venv>\\Lib\\site-packages\\nvidia\\cublas\\bin and ...\\nvidia\\cudnn\\bin "
-                "to PATH for the session (see RUN.md §8)."
-                if self._platform_name == "Windows" else None
-            )
+            fix_description = None
+            if self._platform_name == "Windows":
+                # Resolved against *this* interpreter's actual site-packages,
+                # not a generic "<venv>" placeholder -- the pip packages land
+                # in site-packages/nvidia/{cublas,cudnn}/bin regardless of
+                # whether they're installed yet, so this path is valid even
+                # before 'setup' has run the pip fix below.
+                site_packages = Path(sysconfig.get_paths()["purelib"])
+                cublas_bin = site_packages / "nvidia" / "cublas" / "bin"
+                cudnn_bin = site_packages / "nvidia" / "cudnn" / "bin"
+                fix_description = (
+                    "On Windows the pip packages alone are not enough -- also run this in your "
+                    "PowerShell session before 'videodoc transcribe' (see RUN.md §8): "
+                    f'$env:PATH = "{cublas_bin};{cudnn_bin};$env:PATH"'
+                )
             return CheckResult(
                 "cuda", "GPU / CUDA", "warning",
                 f"{device_count} CUDA device(s) detected but {library_name} could not be loaded: {exc}",

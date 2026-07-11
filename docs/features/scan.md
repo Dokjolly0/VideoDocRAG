@@ -29,13 +29,16 @@
 ```bash
 videodoc scan corso-software-x
 # Project: corso-software-x
-# Videos: 8 found
-# Attachments: 3 found
-# Codebase: present (42 files)
+# +----------------------------------+
+# | Videos      | 8 found            |
+# | Attachments | 3 found            |
+# | Codebase    | present (42 files) |
+# +----------------------------------+
 # Excluded directories: .git, node_modules, __pycache__, dist, build, ...
 # Excluded file patterns: .DS_Store
 # Sources manifest updated: sources.yaml
 ```
+(The summary is a Rich table — box-drawing characters on a terminal that supports them, the ASCII fallback shown above on legacy Windows consoles.)
 
 ## Tests
 - Unit: `tests/core/test_filesystem.py` (exclusions, pruning, extension filters, `max_file_size_mb`, symlink handling, `test_scan_codebase_collects_walk_errors_without_crashing`, `test_codebase_is_present_handles_unreadable_directory_without_crashing`), `tests/core/test_source_manifest.py` (roundtrip, missing/invalid file), `tests/core/test_scan_service.py` (internal/external videos, missing/non-directory external path, zero videos, codebase presence with exclusions, manifest always regenerated, `test_scan_errors_are_collected_and_prefixed_by_source`, `test_scan_unreadable_codebase_root_does_not_crash`).

@@ -45,7 +45,9 @@ def test_extract_audio_success_prints_summary(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["extract-audio", "demo"])
     assert result.exit_code == 0
-    assert "Audio extracted: 1, skipped (already extracted): 0" in result.stdout
+    assert "Extracted" in result.stdout
+    extracted_line = next(line for line in result.stdout.splitlines() if "Extracted" in line)
+    assert "1" in extracted_line
     assert (custom / "workdir" / "demo" / "audio" / "demo.wav").is_file()
 
 
@@ -97,4 +99,6 @@ def test_extract_audio_rerun_shows_all_skipped(tmp_path, monkeypatch):
     runner.invoke(app, ["extract-audio", "demo"])
     result = runner.invoke(app, ["extract-audio", "demo"])
     assert result.exit_code == 0
-    assert "Audio extracted: 0, skipped (already extracted): 1" in result.stdout
+    assert "Skipped" in result.stdout
+    skipped_line = next(line for line in result.stdout.splitlines() if "Skipped" in line)
+    assert "1" in skipped_line

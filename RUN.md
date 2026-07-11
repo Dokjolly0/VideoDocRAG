@@ -294,18 +294,20 @@ videodoc scan corso-software-x
 
 ```text
 Project: corso-software-x
-Videos: 8 found
-Attachments: 3 found
-Codebase: present (42 files)
++----------------------------------+
+| Videos      | 8 found            |
+| Attachments | 3 found            |
+| Codebase    | present (42 files) |
++----------------------------------+
 Excluded directories: .git, node_modules, __pycache__, dist, build, ...
 Excluded file patterns: .DS_Store
 Sources manifest updated: sources.yaml
 ```
 
-Se una sorgente è esterna, viene segnalata esplicitamente:
+Se una sorgente è esterna, viene segnalata esplicitamente nella stessa cella:
 
 ```text
-Videos: 8 found (external: /mnt/corsi/registrazioni)
+| Videos | 8 found (external: /mnt/corsi/registrazioni) |
 ```
 
 Zero video trovati **non** fa fallire il comando (`exit code` resta `0`): sarà una fase successiva (ingestion) a rifiutarsi di procedere senza video, non lo scan. Allo stesso modo, una sorgente esterna mancante (es. un'unità scollegata, o un mount point non montato su Linux/macOS) o che punta a un file invece che a una cartella produce solo un avviso, mai un crash:
@@ -326,7 +328,11 @@ videodoc ingest corso-software-x
 
 ```text
 Project: corso-software-x
-Videos ingested: 8, reingested (changed): 0, skipped (unchanged): 0
++----------------+
+| Ingested   | 8 |
+| Reingested | 0 |
+| Skipped    | 0 |
++----------------+
 Database updated: project.db
 ```
 
@@ -348,7 +354,10 @@ videodoc extract-audio corso-software-x
 
 ```text
 Project: corso-software-x
-Audio extracted: 8, skipped (already extracted): 0
++---------------+
+| Extracted | 8 |
+| Skipped   | 0 |
++---------------+
 ```
 
 È idempotente per presenza del file: rilanciandolo, i video già estratti vengono saltati senza richiamare `ffmpeg`:
@@ -359,7 +368,10 @@ videodoc extract-audio corso-software-x
 
 ```text
 Project: corso-software-x
-Audio extracted: 0, skipped (already extracted): 8
++---------------+
+| Extracted | 0 |
+| Skipped   | 8 |
++---------------+
 ```
 
 Se nessun video è ancora stato registrato (`ingest` non è mai stato eseguito) o se `ffmpeg` non è disponibile in `PATH`, il comando fallisce subito (`exit code` 1) senza creare o modificare nulla. Un problema di estrazione su un singolo video (es. codec non supportato) non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0.
@@ -374,7 +386,10 @@ videodoc transcribe corso-software-x
 
 ```text
 Project: corso-software-x
-Transcribed: 8, skipped (already transcribed): 0
++-----------------+
+| Transcribed | 8 |
+| Skipped     | 0 |
++-----------------+
 ```
 
 È idempotente per presenza del file: rilanciandolo, i video già trascritti vengono saltati senza richiamare il motore di trascrizione (il modello, potenzialmente pesante da caricare, non viene nemmeno inizializzato se non c'è nulla da fare):
@@ -385,7 +400,10 @@ videodoc transcribe corso-software-x
 
 ```text
 Project: corso-software-x
-Transcribed: 0, skipped (already transcribed): 8
++-----------------+
+| Transcribed | 0 |
+| Skipped     | 8 |
++-----------------+
 ```
 
 Se nessun video ha ancora l'audio estratto (`extract-audio` non è mai stato eseguito), il comando fallisce subito (`exit code` 1) senza caricare alcun modello. Un problema di trascrizione su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0 — vedi §8 per un caso reale (libreria CUDA mancante) riscontrato durante lo sviluppo.
@@ -399,14 +417,16 @@ videodoc doctor
 ```
 
 ```text
-Python version: 3.13.14 (>= 3.11 required)
-FFmpeg (ffprobe + ffmpeg): both found on PATH
-faster-whisper: importable
-GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
-Project registry: 3 project(s) registered -- ...
-Default projects folder: ... is writable (default location)
+OK    Python version: 3.13.14 (>= 3.11 required)
+OK    FFmpeg (ffprobe + ffmpeg): both found on PATH
+OK    faster-whisper: importable
+OK    GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+OK    Project registry: 3 project(s) registered -- ...
+OK    Default projects folder: ... is writable (default location)
 6 OK, 0 warning(s), 0 error(s).
 ```
+
+Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode — verificato che simboli come spunte/triangoli di avviso causano un crash reale (`UnicodeEncodeError`) su alcune console Windows legacy, anche passando per Rich.
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
@@ -419,13 +439,19 @@ videodoc setup
 ```
 
 ```text
-Warning: GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
+OK    Python version: 3.13.14 (>= 3.11 required)
+OK    FFmpeg (ffprobe + ffmpeg): both found on PATH
+OK    faster-whisper: importable
+WARN  GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
   Applying fix for 'GPU / CUDA': <venv>\Scripts\python.exe -m pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
   Applied: Successfully installed nvidia-cublas-cu12-... nvidia-cudnn-cu12-...
-  On Windows the pip packages alone are not enough -- also add ... to PATH for the session (see RUN.md §8).
+  On Windows the pip packages alone are not enough -- also run this in your PowerShell session before 'videodoc transcribe' (see RUN.md §8): $env:PATH = "<venv>\Lib\site-packages\nvidia\cublas\bin;<venv>\Lib\site-packages\nvidia\cudnn\bin;$env:PATH"
+OK    Project registry: 3 project(s) registered -- ...
+OK    Default projects folder: ... is writable
 Re-checking automatically-fixed items...
-GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+WARN  GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
 ```
+(In questo esempio reale il solo `pip install` non basta ancora -- resta il passaggio manuale del `PATH`, mai automatizzato; vedi il paragrafo successivo.)
 
 Le correzioni di sistema riuscite non vengono ri-verificate nello stesso processo (il `PATH` del processo già in esecuzione non si aggiorna) — solo le correzioni pip lo sono, per questo la sezione finale "Re-checking..." appare solo quando è stata applicata almeno una correzione pip.
 

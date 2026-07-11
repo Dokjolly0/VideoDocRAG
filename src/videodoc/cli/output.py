@@ -1,3 +1,5 @@
+from typing import Literal
+
 from rich.console import Console
 from rich.table import Table
 
@@ -20,13 +22,43 @@ def print_warning(message: str) -> None:
     console.print(f"Warning: {message}", style="yellow")
 
 
-def print_check_error(message: str) -> None:
-    # stdout, not error_console: doctor/setup print multiple per-check lines
-    # that must stay interleaved together in one readable report, unlike
-    # every other command's single fatal "Error: ..." line printed right
-    # before typer.Exit(1) -- the exit code here is computed separately
-    # from DoctorResult.has_errors, not from this print call itself.
-    console.print(f"Error: {message}", style="bold red")
+def print_check_result(status: Literal["ok", "warning", "error"], message: str) -> None:
+    # doctor/setup print multiple per-check lines that must stay interleaved
+    # together in one readable report, unlike every other command's single
+    # fatal "Error: ..." line printed right before typer.Exit(1) -- the exit
+    # code here is computed separately from DoctorResult.has_errors, not
+    # from this print call itself.
+    #
+    # ASCII status words only, never Unicode glyphs (checkmarks/warning
+    # triangles): verified directly that they crash with UnicodeEncodeError
+    # on a real Windows console in this project's target environment, via
+    # both a bare print() and Rich's own Console.print() (Rich's legacy-
+    # Windows box-drawing substitution table does not cover arbitrary
+    # Unicode symbols, only its own box characters).
+    #
+    # Padding is applied to the raw word BEFORE it is wrapped in Rich markup
+    # tags -- padding an already-tagged string would count the tags' own
+    # bracket characters, and "[green]"/"[yellow]"/"[bold red]" have
+    # different lengths, which would silently misalign the three status
+    # words relative to each other.
+    word, style = {"ok": ("OK", "green"), "warning": ("WARN", "yellow"), "error": ("ERROR", "bold red")}[status]
+    console.print(f"[{style}]{word:<5}[/{style}] {message}")
+
+
+def render_summary_table(rows: list[tuple[str, str]]) -> None:
+    # No header: a 2-4 row field/value summary (e.g. scan's Videos/
+    # Attachments/Codebase counts) reads better as plain label: value pairs
+    # than with a redundant "Field | Value" header row. overflow="fold" on
+    # Value, not the default "ellipsis": a value can carry a long
+    # "(external: <full path>)" suffix that must never be silently
+    # truncated -- worse than the plain-text line this replaces, which
+    # never truncated either.
+    table = Table(show_header=False)
+    table.add_column("Field", style="bold")
+    table.add_column("Value", overflow="fold")
+    for label, value in rows:
+        table.add_row(label, value)
+    console.print(table)
 
 
 def render_projects_table(entries: list[ProjectEntry]) -> None:

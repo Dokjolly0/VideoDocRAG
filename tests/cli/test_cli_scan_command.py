@@ -16,7 +16,8 @@ def test_scan_internal_videos_found(tmp_path):
 
     result = runner.invoke(app, ["scan", "demo"])
     assert result.exit_code == 0
-    assert "Videos: 2 found" in result.stdout
+    assert "Videos" in result.stdout
+    assert "2 found" in result.stdout
     assert (custom / "sources.yaml").is_file()
 
 
@@ -26,7 +27,8 @@ def test_scan_zero_videos_reports_zero_not_failure(tmp_path):
 
     result = runner.invoke(app, ["scan", "demo"])
     assert result.exit_code == 0
-    assert "Videos: 0 found" in result.stdout
+    assert "Videos" in result.stdout
+    assert "0 found" in result.stdout
 
 
 def test_scan_external_videos_reported_with_suffix(tmp_path):
@@ -38,7 +40,7 @@ def test_scan_external_videos_reported_with_suffix(tmp_path):
 
     result = runner.invoke(app, ["scan", "demo"])
     assert result.exit_code == 0
-    assert "Videos: 1 found (external:" in result.stdout
+    assert "1 found (external:" in result.stdout
 
 
 def test_scan_external_videos_missing_path_warns_not_crashes(tmp_path):
@@ -92,7 +94,7 @@ def test_scan_excludes_node_modules_end_to_end(tmp_path):
 
     result = runner.invoke(app, ["scan", "demo"])
     assert result.exit_code == 0
-    assert "Codebase: present (1 files)" in result.stdout
+    assert "present (1 files)" in result.stdout
     assert "node_modules" in result.stdout
 
 
@@ -136,7 +138,7 @@ def test_scan_unreadable_codebase_root_warns_without_crashing(tmp_path, monkeypa
     assert result.exit_code == 0
     assert "Warning" in result.stdout
     assert "codebase:" in result.stdout
-    assert "Codebase: not present" in result.stdout
+    assert "not present" in result.stdout
 
 
 def test_scan_unknown_project_fails(tmp_path):

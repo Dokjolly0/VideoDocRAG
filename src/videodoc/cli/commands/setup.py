@@ -1,6 +1,6 @@
 import typer
 
-from videodoc.cli.output import console, print_check_error, print_warning
+from videodoc.cli.output import console, print_check_result, print_warning
 from videodoc.core.services.doctor_service import DoctorService
 from videodoc.core.services.setup_service import SetupService
 
@@ -21,13 +21,10 @@ def setup_command() -> None:
 
     for check in before.checks:
         line = f"{check.name}: {check.message}"
+        print_check_result(check.status, line)
         if check.status == "ok":
-            console.print(line)
             continue
-        if check.status == "warning":
-            print_warning(line)
-        else:
-            print_check_error(line)
+        if check.status == "error":
             unresolved_error_ids.add(check.id)
 
         if check.fix_kind is None:
@@ -82,7 +79,7 @@ def setup_command() -> None:
         for check_id in pip_fixed_ids:
             updated = after_by_id.get(check_id)
             if updated is not None:
-                console.print(f"{updated.name}: {updated.message}")
+                print_check_result(updated.status, f"{updated.name}: {updated.message}")
                 if updated.status != "error":
                     unresolved_error_ids.discard(check_id)
 

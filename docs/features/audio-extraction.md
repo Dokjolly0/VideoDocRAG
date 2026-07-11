@@ -30,11 +30,17 @@
 ```bash
 videodoc extract-audio corso-software-x
 # Project: corso-software-x
-# Audio extracted: 8, skipped (already extracted): 0
+# +---------------+
+# | Extracted | 8 |
+# | Skipped   | 0 |
+# +---------------+
 
 videodoc extract-audio corso-software-x
 # Project: corso-software-x
-# Audio extracted: 0, skipped (already extracted): 8
+# +---------------+
+# | Extracted | 0 |
+# | Skipped   | 8 |
+# +---------------+
 ```
 
 A missing `project.db` (ingest never run) or a missing `ffmpeg` binary both fail fast with zero side effects:

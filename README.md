@@ -1345,13 +1345,17 @@ Output atteso:
 
 ```text
 Project: corso-software-x
-Videos: 8 found
-Attachments: 3 found
-Codebase: present (42 files)
++----------------------------------+
+| Videos      | 8 found            |
+| Attachments | 3 found            |
+| Codebase    | present (42 files) |
++----------------------------------+
 Excluded directories: .git, node_modules, __pycache__, dist, build
 Excluded file patterns: .DS_Store
 Sources manifest updated: sources.yaml
 ```
+
+(La tabella di riepilogo è renderizzata con Rich: caratteri box-drawing Unicode su un terminale che li supporta, fallback ASCII come sopra su console Windows legacy.)
 
 Se una fonte è esterna al progetto (percorso assoluto in `config.yaml`, vedi §8.1.2), viene segnalata esplicitamente, es. `Videos: 8 found (external: D:\Corsi\Registrazioni)`. Una fonte esterna mancante o non trovata non interrompe la scansione: produce un avviso (`Warning: external videos path not found: ...`), non un errore.
 

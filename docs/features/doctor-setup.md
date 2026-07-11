@@ -27,7 +27,7 @@
 - `src/videodoc/core/utils/setup_actions.py` — `run_fix_command`, `SetupActionError`.
 - `src/videodoc/core/services/registry_service.py` — `last_load_was_corrupted`, `registry_path` (additions).
 - `src/videodoc/cli/commands/doctor.py`, `src/videodoc/cli/commands/setup.py` — the two commands.
-- `src/videodoc/cli/output.py` — `print_check_error` (addition).
+- `src/videodoc/cli/output.py` — `print_check_result` (addition).
 
 ## Design decisions
 - **No new `VideoDocError` subclass.** Neither command ever raises past its own boundary — `doctor` always returns a full report, `setup` always reports what it did/skipped/failed. Matches the existing per-item (plain exception, not domain exception) failure pattern already used by `extract-audio`/`transcribe`, generalized here to two commands that never have a single fatal "this whole run failed" condition at all.
@@ -40,12 +40,12 @@
 Clean machine:
 ```bash
 videodoc doctor
-# Python version: 3.13.14 (>= 3.11 required)
-# FFmpeg (ffprobe + ffmpeg): both found on PATH
-# faster-whisper: importable
-# GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
-# Project registry: 3 project(s) registered -- ...
-# Default projects folder: ... is writable (default location)
+# OK    Python version: 3.13.14 (>= 3.11 required)
+# OK    FFmpeg (ffprobe + ffmpeg): both found on PATH
+# OK    faster-whisper: importable
+# OK    GPU / CUDA: 1 CUDA device(s) detected, cublas64_12.dll loadable
+# OK    Project registry: 3 project(s) registered -- ...
+# OK    Default projects folder: ... is writable (default location)
 # 6 OK, 0 warning(s), 0 error(s).
 ```
 
@@ -53,20 +53,20 @@ A real machine with the cuBLAS problem this feature exists to catch:
 ```bash
 videodoc doctor
 # ...
-# Warning: GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
-#   Fix: On Windows the pip packages alone are not enough -- also add <venv>\...\nvidia\cublas\bin and ...\nvidia\cudnn\bin to PATH for the session (see RUN.md).
+# WARN  GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
+#   Fix: On Windows the pip packages alone are not enough -- also run this in your PowerShell session before 'videodoc transcribe' (see RUN.md): $env:PATH = "<venv>\Lib\site-packages\nvidia\cublas\bin;<venv>\Lib\site-packages\nvidia\cudnn\bin;$env:PATH"
 # 5 OK, 1 warning(s), 0 error(s).
 
 videodoc setup
 # ...
-# Warning: GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
+# WARN  GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
 #   Applying fix for 'GPU / CUDA': <venv>\Scripts\python.exe -m pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
 #   Applied: Requirement already satisfied: nvidia-cublas-cu12 ...
-#   On Windows the pip packages alone are not enough -- also add ... to PATH for the session (see RUN.md).
+#   On Windows the pip packages alone are not enough -- also run this in your PowerShell session before 'videodoc transcribe' (see RUN.md): $env:PATH = "<venv>\Lib\site-packages\nvidia\cublas\bin;<venv>\Lib\site-packages\nvidia\cudnn\bin;$env:PATH"
 # Re-checking automatically-fixed items...
-# GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
+# WARN  GPU / CUDA: 1 CUDA device(s) detected but cublas64_12.dll could not be loaded: ...
 ```
-(The pip fix alone genuinely isn't enough on Windows — confirmed by the re-check above still reporting the warning; the PATH step remains manual by design, see RUN.md's troubleshooting entry.)
+(The status words `OK`/`WARN`/`ERROR` are ASCII text with Rich color markup, never Unicode glyphs — checkmark/warning-triangle symbols were verified to crash with `UnicodeEncodeError` on a real legacy Windows console. The pip fix alone genuinely isn't enough on Windows — confirmed by the re-check above still reporting the warning; the PATH step remains manual by design, see RUN.md's troubleshooting entry.)
 
 ## Tests
 - Unit: `tests/core/test_cuda.py` (device count success/missing-package/call-failure, cuBLAS probe success/`OSError`, and a dedicated regression test asserting `winmode=0` is passed), `tests/core/test_setup_actions.py` (success, `capture=False` threaded through, `CalledProcessError`/`OSError`), `tests/core/test_registry_service.py` (new: `last_load_was_corrupted` false/true/resets-on-next-clean-load, `registry_path`).
