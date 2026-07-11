@@ -187,6 +187,8 @@ class FramesSection(BaseModel):
     interval_seconds: int = Field(8, gt=0)
     scene_detection: bool = True
     keyword_boost: bool = True
+    scene_threshold: float = Field(0.10, gt=0.0, lt=1.0)
+    hwaccel: Literal["auto", "cuda", "none"] = "auto"
     workers: int | Literal["auto"] = "auto"
 
     @field_validator("workers")

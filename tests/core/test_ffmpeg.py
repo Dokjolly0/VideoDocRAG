@@ -4,7 +4,7 @@ import subprocess
 import pytest
 
 import videodoc.core.utils.ffmpeg as ffmpeg_module
-from videodoc.core.utils.ffmpeg import AudioExtractionError, FrameExtractionError, extract_audio, extract_frames
+from videodoc.core.utils.ffmpeg import AudioExtractionError, FrameExtractionError, extract_audio, extract_frames, ffmpeg_cuda_available
 
 
 def test_extract_audio_invokes_ffmpeg_with_expected_args(tmp_path, monkeypatch):
@@ -265,3 +265,88 @@ def test_extract_frames_passes_threads(tmp_path, monkeypatch):
 
     args = captured["args"]
     assert args[args.index("-threads") + 1] == "4"
+
+def test_extract_frames_hwaccel_cuda_goes_before_input(tmp_path, monkeypatch):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        (output_dir / "frame_00001.jpg").write_bytes(b"fake")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="pts_time:8.0")
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", fake_run)
+    extract_frames(tmp_path / "a.mp4", output_dir, [8.0], hwaccel="cuda")
+
+    args = captured["args"]
+    assert args[args.index("-hwaccel") + 1] == "cuda"
+    assert args.index("-hwaccel") < args.index("-i")
+
+
+def test_extract_frames_default_omits_hwaccel(tmp_path, monkeypatch):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        (output_dir / "frame_00001.jpg").write_bytes(b"fake")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="pts_time:8.0")
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", fake_run)
+    extract_frames(tmp_path / "a.mp4", output_dir, [8.0])
+
+    assert "-hwaccel" not in captured["args"]
+
+
+def test_ffmpeg_cuda_available_true_when_ffmpeg_and_gpu_probe_succeed(monkeypatch):
+    ffmpeg_cuda_available.cache_clear()
+
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, stdout="Hardware acceleration methods:\n cuda\n", stderr="")
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(ffmpeg_module, "probe_gpu", lambda: object())
+
+    assert ffmpeg_cuda_available() is True
+    ffmpeg_cuda_available.cache_clear()
+
+
+def test_ffmpeg_cuda_available_false_without_cuda_hwaccel(monkeypatch):
+    ffmpeg_cuda_available.cache_clear()
+    monkeypatch.setattr(
+        ffmpeg_module.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout="Hardware acceleration methods:\n d3d11va\n", stderr=""),
+    )
+    monkeypatch.setattr(ffmpeg_module, "probe_gpu", lambda: object())
+
+    assert ffmpeg_cuda_available() is False
+    ffmpeg_cuda_available.cache_clear()
+
+
+def test_ffmpeg_cuda_available_false_when_probe_fails(monkeypatch):
+    ffmpeg_cuda_available.cache_clear()
+    monkeypatch.setattr(
+        ffmpeg_module.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout="cuda\n", stderr=""),
+    )
+    monkeypatch.setattr(ffmpeg_module, "probe_gpu", lambda: None)
+
+    assert ffmpeg_cuda_available() is False
+    ffmpeg_cuda_available.cache_clear()
+
+
+def test_ffmpeg_cuda_available_false_on_ffmpeg_error(monkeypatch):
+    ffmpeg_cuda_available.cache_clear()
+
+    def _raise(*args, **kwargs):
+        raise OSError("ffmpeg missing")
+
+    monkeypatch.setattr(ffmpeg_module.subprocess, "run", _raise)
+    monkeypatch.setattr(ffmpeg_module, "probe_gpu", lambda: object())
+
+    assert ffmpeg_cuda_available() is False
+    ffmpeg_cuda_available.cache_clear()

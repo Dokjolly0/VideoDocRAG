@@ -24,7 +24,7 @@ class FrameManifest(BaseModel):
     # FrameExtractionService compares these against the *current* run's
     # settings before taking the skip/self-heal path: without this, a
     # rerun with different --interval-seconds/--scene-detection/
-    # --keyword-boost would silently keep the stale frames from whatever
+    # --keyword-boost/--scene-threshold would silently keep the stale frames from whatever
     # settings were used originally, since "frames.json already exists"
     # alone used to be the only skip condition. Optional (default None) so
     # a manifest written before this field existed still parses instead of
@@ -34,6 +34,7 @@ class FrameManifest(BaseModel):
     interval_seconds: int | None = None
     scene_detection: bool | None = None
     keyword_boost: bool | None = None
+    scene_threshold: float | None = None
 
     @classmethod
     def load(cls, path: Path) -> "FrameManifest":

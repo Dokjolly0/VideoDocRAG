@@ -445,7 +445,7 @@ Il linguaggio consigliato è Python, perché dispone di ottime librerie per:
 | Core | Estrazione audio/video | FFmpeg |
 | Core | Trascrizione | faster-whisper |
 | Core | OCR | PaddleOCR, Surya OCR o Tesseract |
-| Core | Scene detection | PySceneDetect |
+| Core | Scene detection | FFmpeg scene filter (`select=gt(scene,...)`) |
 | Core | Embedding | bge-m3, nomic-embed-text, multilingual-e5-large |
 | Core | Vector DB | Qdrant |
 | Core | Database strutturato | SQLite |
@@ -1241,10 +1241,14 @@ transcription:
   beam_size: 1
   vad_filter: true
 
+frames:
+  interval_seconds: 8
+  scene_detection: true
+  scene_threshold: 0.10
+  hwaccel: "auto"
+
 ocr:
   engine: "rapidocr"
-  frame_interval_seconds: 8
-  detect_scene_changes: true
 
 retrieval:
   vector_db: "qdrant"
@@ -1480,7 +1484,7 @@ Svantaggio: può generare molti frame inutili.
 
 ## 18.2 Scene detection
 
-Usare PySceneDetect per estrarre frame quando cambia la scena.
+Usare FFmpeg (`select=gt(scene\\,threshold)`) per rilevare i cambi scena, con CPU o CUDA quando disponibile.
 
 Vantaggio: riduce frame duplicati.
 
@@ -1504,7 +1508,7 @@ Estrarre più frame quando nella trascrizione compaiono parole come:
 
 Questa è spesso la strategia migliore per video tecnici.
 
-Nota implementativa: le tre strategie sopra non sono alternative — `videodoc frames` le combina tutte e tre in un'unica lista di timestamp deduplicata: l'intervallo fisso (`frames.interval_seconds`, default 8s) resta sempre la baseline garantita, i cambi scena rilevati da PySceneDetect (`ContentDetector`) e i timestamp da parola chiave si aggiungono come "boost" con priorità più alta, sostituendo un tick d'intervallo troppo vicino invece di produrre un frame ridondante. I frame vengono salvati in `workdir/<video_id>/frames/frame_NNNN.jpg` e registrati sia in `workdir/<video_id>/frames/frames.json` sia nella tabella `frames` di `project.db` (§31). Un frame "boosted" (scena o parola chiave) visivamente quasi identico al frame precedente viene scartato tramite un hash percettivo — non un dedup di contenuto, che resta compito del riconoscimento del codice (§20.3), ma solo un modo per non salvare screenshot ridondanti adiacenti. Vedi `docs/features/frame-extraction.md`.
+Nota implementativa: le tre strategie sopra non sono alternative — `videodoc frames` le combina tutte e tre in un'unica lista di timestamp deduplicata: l'intervallo fisso (`frames.interval_seconds`, default 8s) resta sempre la baseline garantita, i cambi scena rilevati da FFmpeg (`frames.scene_threshold`, default 0.10) e i timestamp da parola chiave si aggiungono come "boost" con priorità più alta, sostituendo un tick d'intervallo troppo vicino invece di produrre un frame ridondante. `frames.hwaccel` (`auto`/`cuda`/`none`) controlla solo la performance della decodifica e non l'idempotenza. I frame vengono salvati in `workdir/<video_id>/frames/frame_NNNN.jpg` e registrati sia in `workdir/<video_id>/frames/frames.json` sia nella tabella `frames` di `project.db` (§31). Un frame "boosted" (scena o parola chiave) visivamente quasi identico al frame precedente viene scartato tramite un hash percettivo — non un dedup di contenuto, che resta compito del riconoscimento del codice (§20.3), ma solo un modo per non salvare screenshot ridondanti adiacenti. Vedi `docs/features/frame-extraction.md`.
 
 ---
 
@@ -2465,6 +2469,8 @@ frames:
   interval_seconds: 8
   scene_detection: true
   keyword_boost: true
+  scene_threshold: 0.10
+  hwaccel: "auto"
   workers: "auto"
 
 ocr:
@@ -3113,7 +3119,7 @@ La CLI e la GUI devono essere solo interfacce verso il motore applicativo.
 
 ## 37.8 Introdurre le dipendenze pesanti solo quando servono
 
-Le dipendenze pesanti (Ollama/LLM locale, faster-whisper, PaddleOCR/Surya/Tesseract, Qdrant, PySceneDetect) non devono essere richieste per far funzionare le fasi che non le usano.
+Le dipendenze pesanti (Ollama/LLM locale, faster-whisper, PaddleOCR/Surya/Tesseract, Qdrant, modelli OCR/embedding) non devono essere richieste per far funzionare le fasi che non le usano.
 
 Per esempio, l'inizializzazione di un progetto (`videodoc init`) o la scansione delle fonti (`videodoc scan`) devono funzionare anche su una macchina senza Ollama, senza modelli di trascrizione o OCR installati e senza Qdrant in esecuzione. Ogni dipendenza pesante va introdotta solo quando si implementa la fase della pipeline che la richiede realmente, non prima.
 

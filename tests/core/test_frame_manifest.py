@@ -13,7 +13,7 @@ def _manifest(**overrides) -> FrameManifest:
             FrameManifestEntry(id="demo_frame_0001", timestamp_seconds=0.0, image_path="workdir/demo/frames/frame_0001.jpg", perceptual_hash="abc123"),
             FrameManifestEntry(id="demo_frame_0002", timestamp_seconds=8.0, image_path="workdir/demo/frames/frame_0002.jpg", perceptual_hash=None),
         ],
-        interval_seconds=8, scene_detection=True, keyword_boost=True,
+        interval_seconds=8, scene_detection=True, keyword_boost=True, scene_threshold=0.1,
     )
     defaults.update(overrides)
     return FrameManifest(**defaults)
@@ -72,13 +72,15 @@ def test_manifest_without_settings_fields_loads_with_none_defaults(tmp_path):
     assert manifest.interval_seconds is None
     assert manifest.scene_detection is None
     assert manifest.keyword_boost is None
+    assert manifest.scene_threshold is None
 
 
 def test_manifest_settings_fields_roundtrip(tmp_path):
-    manifest = _manifest(interval_seconds=5, scene_detection=False, keyword_boost=True)
+    manifest = _manifest(interval_seconds=5, scene_detection=False, keyword_boost=True, scene_threshold=0.2)
     path = tmp_path / "frames.json"
     manifest.save(path)
     loaded = FrameManifest.load(path)
     assert loaded.interval_seconds == 5
     assert loaded.scene_detection is False
     assert loaded.keyword_boost is True
+    assert loaded.scene_threshold == 0.2

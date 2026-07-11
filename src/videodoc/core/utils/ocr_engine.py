@@ -19,7 +19,7 @@ class OCRRunError(Exception):
 def rapidocr_available() -> bool:
     """Cheap one-time check for whether 'rapidocr' AND 'onnxruntime' can both
     be imported at all -- checked once per run by the caller, not once per
-    video/frame, mirroring scenedetect_available(). 'onnxruntime' is checked
+    video/frame, mirroring the lazy availability checks used by the other media phases. 'onnxruntime' is checked
     explicitly and separately: 'rapidocr' itself does not declare it as a
     hard dependency (verified against the installed package's own metadata),
     so a machine with 'rapidocr' installed but 'onnxruntime' missing would
@@ -54,7 +54,7 @@ def load_engine() -> Any:
     Wraps any failure from the rapidocr/onnxruntime stack in OCRRunError: at
     this boundary with a third-party library whose exception surface is not
     fully enumerable, broad exception handling is deliberate, matching
-    scene_detection.py's own reasoning for the same kind of boundary."""
+    the same reasoning used at other external-tool/library boundaries."""
     try:
         from rapidocr import RapidOCR  # imported lazily: this module must be importable even when rapidocr isn't installed
         return RapidOCR()

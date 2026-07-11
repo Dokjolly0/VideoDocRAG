@@ -1,3 +1,5 @@
+from typing import Literal
+
 import typer
 
 from videodoc.cli.output import console, print_error, print_warning, render_summary_table
@@ -8,7 +10,6 @@ from videodoc.core.errors import (
     InvalidConfigError,
     NoVideosFoundError,
     ProjectNotFoundError,
-    SceneDetectionUnavailableError,
 )
 from videodoc.core.services.frame_extraction_service import FrameExtractionService
 from videodoc.core.services.project_service import ProjectService
@@ -20,6 +21,8 @@ def frames_command(
     interval_seconds: int | None = typer.Option(None, "--interval-seconds", min=1, help="Fixed-interval frame extraction spacing override."),
     scene_detection: bool | None = typer.Option(None, "--scene-detection/--no-scene-detection", help="Enable or disable scene-change frame boosting."),
     keyword_boost: bool | None = typer.Option(None, "--keyword-boost/--no-keyword-boost", help="Enable or disable transcript-keyword frame boosting."),
+    scene_threshold: float | None = typer.Option(None, "--scene-threshold", min=0.000001, max=0.999999, help="FFmpeg scene-score threshold override (0 < value < 1)."),
+    hwaccel: Literal["auto", "cuda", "none"] | None = typer.Option(None, "--hwaccel", help="FFmpeg decode acceleration override."),
 ) -> None:
     try:
         service = ProjectService.load(project)
@@ -31,13 +34,14 @@ def frames_command(
                 interval_seconds_override=interval_seconds,
                 scene_detection_override=scene_detection,
                 keyword_boost_override=keyword_boost,
+                scene_threshold_override=scene_threshold,
+                hwaccel_override=hwaccel,
             ).run(progress=reporter)
     except (
         ProjectNotFoundError,
         InvalidConfigError,
         NoVideosFoundError,
         ExternalToolNotFoundError,
-        SceneDetectionUnavailableError,
         DatabaseError,
     ) as exc:
         print_error(str(exc))

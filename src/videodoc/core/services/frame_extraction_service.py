@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import shutil
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from videodoc.core.config import ProjectConfig
 from videodoc.core.errors import (
@@ -12,7 +14,6 @@ from videodoc.core.errors import (
     InvalidFrameManifestError,
     InvalidVideoMetadataError,
     NoVideosFoundError,
-    SceneDetectionUnavailableError,
 )
 from videodoc.core.models.frame_manifest import FrameManifest, FrameManifestEntry
 from videodoc.core.models.video_metadata import VideoMetadata
@@ -26,7 +27,7 @@ from videodoc.core.storage.database import (
     list_videos,
     replace_frames,
 )
-from videodoc.core.utils.ffmpeg import FrameExtractionError, extract_frames
+from videodoc.core.utils.ffmpeg import FrameExtractionError, extract_frames, ffmpeg_cuda_available
 from videodoc.core.utils.frame_hash import average_hash, is_near_duplicate
 from videodoc.core.utils.frame_selection import (
     INTERVAL_PRIORITY,
@@ -35,16 +36,21 @@ from videodoc.core.utils.frame_selection import (
     match_frames_to_candidates,
     select_frame_timestamps,
 )
-from videodoc.core.utils.hardware import resolve_cpu_workers, resolve_executor_workers, resolve_ffmpeg_threads
+from videodoc.core.utils.hardware import (
+    FFMPEG_GPU_DECODE_SESSIONS,
+    resolve_cpu_workers,
+    resolve_executor_workers,
+    resolve_ffmpeg_threads,
+)
 from videodoc.core.utils.progress import ProgressReporter
-from videodoc.core.utils.scene_detection import SceneDetectionError, detect_scene_timestamps, scenedetect_available
+from videodoc.core.utils.scene_detection import SceneDetectionError, detect_scene_timestamps
 
 
 @dataclass(frozen=True)
 class FrameExtractionResult:
     extracted: tuple[str, ...]  # frames freshly produced this run
     skipped: tuple[str, ...]  # frames/frames.json already existed, ffmpeg not invoked
-    errors: tuple[str, ...]  # per-video ffmpeg/scenedetect/DB/metadata.json-update failures
+    errors: tuple[str, ...]  # per-video ffmpeg/scene detection/DB/metadata.json-update failures
 
 
 @dataclass(frozen=True)
@@ -57,19 +63,15 @@ class _FrameExtractionOutcome:
 
 @dataclass(frozen=True)
 class _VideoPlan:
-    """What _process_plan needs to do for one video, decided up front (in
-    run(), sequentially, before any ffmpeg/scenedetect availability check or
-    thread-pool work) purely from cheap local state: does frames.json exist,
-    does it parse, and do its stored settings match this run's. Mirrors
-    TranscriptionService's own existing/fresh pre-scan pattern."""
+    """Per-video work decided by a cheap local pre-scan."""
     row: VideoRow
     video_dir: Path
     frames_dir: Path
     frames_rel: Path
     manifest_path: Path
     needs_fresh: bool
-    manifest: FrameManifest | None = None  # a successfully loaded existing manifest, whether or not its settings still match
-    load_error: str | None = None  # set instead of manifest when frames.json exists but fails to parse
+    manifest: FrameManifest | None = None
+    load_error: str | None = None
 
 
 class FrameExtractionService:
@@ -82,6 +84,8 @@ class FrameExtractionService:
         interval_seconds_override: int | None = None,
         scene_detection_override: bool | None = None,
         keyword_boost_override: bool | None = None,
+        scene_threshold_override: float | None = None,
+        hwaccel_override: Literal["auto", "cuda", "none"] | None = None,
     ) -> None:
         self.project_dir = project_dir
         self.config = config
@@ -89,9 +93,16 @@ class FrameExtractionService:
         self.interval_seconds = interval_seconds_override if interval_seconds_override is not None else config.frames.interval_seconds
         self.scene_detection = scene_detection_override if scene_detection_override is not None else config.frames.scene_detection
         self.keyword_boost = keyword_boost_override if keyword_boost_override is not None else config.frames.keyword_boost
+        self.scene_threshold = scene_threshold_override if scene_threshold_override is not None else config.frames.scene_threshold
+        self.hwaccel_mode: Literal["auto", "cuda", "none"] = hwaccel_override if hwaccel_override is not None else config.frames.hwaccel
+        self._cuda_decode_enabled = False
+        self._gpu_semaphore: threading.BoundedSemaphore | None = None
 
     def run(self, progress: ProgressReporter | None = None) -> FrameExtractionResult:
         progress = progress or ProgressReporter()
+        self._cuda_decode_enabled = False
+        self._gpu_semaphore = None
+
         db_path = self.project_dir / self.config.paths.database
         if not db_path.exists():
             raise NoVideosFoundError(
@@ -106,22 +117,11 @@ class FrameExtractionService:
                 f"No videos registered in {db_path.name} -- run 'videodoc ingest' first."
             )
 
-        # A project.db created before the frames table existed only has
-        # videos/transcript_segments -- ensure_schema is idempotent and must
-        # be (re-)run here, same reasoning as TranscriptionService. Cheap,
-        # no external tool involved, so it runs unconditionally.
         ensure_schema(db_path)
 
         ordered_videos = sorted(videos, key=lambda r: r.id)
         total = len(ordered_videos)
 
-        # Classify every video up front -- cheap local I/O only (does
-        # frames.json exist, does it parse, do its settings match this
-        # run's) -- before ever requiring ffmpeg/scenedetect. A fully
-        # processed project must be able to re-run 'videodoc frames' to
-        # self-heal DB/metadata even on a machine that no longer has
-        # ffmpeg/PySceneDetect installed, as long as nothing actually needs
-        # fresh extraction.
         plans = [self._plan_for(row) for row in ordered_videos]
         needs_fresh = any(plan.needs_fresh for plan in plans)
 
@@ -131,11 +131,9 @@ class FrameExtractionService:
                     "ffmpeg was not found on PATH. Install FFmpeg and make sure ffmpeg is available "
                     "before running 'videodoc frames' -- see RUN.md."
                 )
-            if self.scene_detection and not scenedetect_available():
-                raise SceneDetectionUnavailableError(
-                    "config.frames.scene_detection is enabled but the 'scenedetect' package is not "
-                    "installed -- run 'pip install scenedetect' or pass --no-scene-detection."
-                )
+            self._cuda_decode_enabled = self._resolve_cuda_decode_enabled()
+            if self._cuda_decode_enabled:
+                self._gpu_semaphore = threading.BoundedSemaphore(FFMPEG_GPU_DECODE_SESSIONS)
 
         configured_workers = resolve_cpu_workers(self.config.frames.workers, self.workers_override)
         executor_workers = resolve_executor_workers(configured_workers, len(videos))
@@ -160,9 +158,16 @@ class FrameExtractionService:
 
         return FrameExtractionResult(tuple(extracted), tuple(skipped), tuple(errors))
 
+    def _resolve_cuda_decode_enabled(self) -> bool:
+        if self.hwaccel_mode == "none":
+            return False
+        if self.hwaccel_mode == "cuda":
+            return True
+        return ffmpeg_cuda_available()
+
     def _plan_for(self, row: VideoRow) -> _VideoPlan:
         video_dir = self.project_dir / self.config.paths.workdir / row.id
-        filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
+        filesystem.ensure_video_workdir(video_dir)
         frames_dir = video_dir / "frames"
         frames_rel = Path(self.config.paths.workdir) / row.id / "frames"
         manifest_path = frames_dir / "frames.json"
@@ -179,6 +184,7 @@ class FrameExtractionService:
             manifest.interval_seconds == self.interval_seconds
             and manifest.scene_detection == self.scene_detection
             and manifest.keyword_boost == self.keyword_boost
+            and (not self.scene_detection or manifest.scene_threshold == self.scene_threshold)
         )
         return _VideoPlan(
             row, video_dir, frames_dir, frames_rel, manifest_path,
@@ -207,22 +213,6 @@ class FrameExtractionService:
             progress.finish_item(plan.row.id)
 
     def _process_existing(self, plan: _VideoPlan, db_path: Path) -> _FrameExtractionOutcome:
-        # Already extracted in a previous run with matching settings --
-        # ffmpeg/scenedetect are never re-invoked, but the DB rows are
-        # always rewritten from the on-disk manifest (cheap DELETE+INSERT),
-        # so a prior transient DB failure self-heals instead of staying
-        # silently empty forever. Mirrors TranscriptionService exactly.
-        #
-        # frames.json itself never carries ocr_text/ocr_confidence/
-        # contains_code (those are OCRService's/a future §20 phase's own
-        # data, not this phase's), so rebuilding rows from the manifest
-        # alone would silently wipe any OCR/code annotations a later phase
-        # already wrote for these exact same frame ids -- a plain "rerun
-        # videodoc frames" must be a pure DB-repair no-op for that data, not
-        # a destructive one. The current DB values for those three columns
-        # are read first and carried over for any frame id that already had
-        # them; a brand-new frame id (never OCR'd/classified) still starts
-        # at their normal None/None/False defaults.
         assert plan.manifest is not None
         row = plan.row
         try:
@@ -257,7 +247,7 @@ class FrameExtractionService:
         scene_timestamps: list[float] = []
         if self.scene_detection:
             try:
-                scene_timestamps = detect_scene_timestamps(source_video)
+                scene_timestamps = self._detect_scenes_with_fallback(row, source_video, progress, ffmpeg_threads)
             except SceneDetectionError as exc:
                 return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: {exc}",))
         progress.update_item(row.id, 0.2)
@@ -278,13 +268,16 @@ class FrameExtractionService:
 
         staging_dir = frames_dir / ".staging"
         if staging_dir.exists():
-            shutil.rmtree(staging_dir)  # leftover from a previous crashed/interrupted run
+            shutil.rmtree(staging_dir)
         staging_dir.mkdir(parents=True)
 
         try:
             if candidates:
-                extracted_frames = extract_frames(
-                    source_video, staging_dir, [c.timestamp_seconds for c in candidates], threads=ffmpeg_threads,
+                extracted_frames = self._extract_frames_with_fallback(
+                    source_video,
+                    staging_dir,
+                    [c.timestamp_seconds for c in candidates],
+                    ffmpeg_threads,
                 )
             else:
                 extracted_frames = []
@@ -294,15 +287,9 @@ class FrameExtractionService:
         progress.update_item(row.id, 0.8)
 
         matched = match_frames_to_candidates(candidates, extracted_frames)
-        kept = self._dedup_by_hash(matched)
+        kept = self._dedup_by_hash(matched, ffmpeg_threads=ffmpeg_threads)
 
         if candidates and not kept:
-            # ffmpeg ran without error and reported a matching frame/pts
-            # count, but zero frames actually survived matching+dedup --
-            # e.g. every requested window fell outside what ffmpeg could
-            # actually decode. Writing an empty frames.json here would
-            # silently report "Extracted" for a video with no usable
-            # frames at all; treat it as a per-video failure instead.
             shutil.rmtree(staging_dir, ignore_errors=True)
             return _FrameExtractionOutcome(
                 row.id, errors=(f"{row.id}: ffmpeg produced 0 usable frame(s) from {len(candidates)} candidate timestamp(s)",)
@@ -321,12 +308,16 @@ class FrameExtractionService:
                 FrameRow(id=frame_id, video_id=row.id, timestamp_seconds=pts, image_path=rel_path, perceptual_hash=hash_hex)
             )
 
-        shutil.rmtree(staging_dir, ignore_errors=True)  # removes any dropped near-duplicate frames still there
-        self._remove_stale_frame_files(frames_dir, keep_count=len(kept))  # leftovers from a previous run with different (e.g. looser) settings
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        self._remove_stale_frame_files(frames_dir, keep_count=len(kept))
 
         manifest = FrameManifest(
-            video_id=row.id, frames=entries,
-            interval_seconds=self.interval_seconds, scene_detection=self.scene_detection, keyword_boost=self.keyword_boost,
+            video_id=row.id,
+            frames=entries,
+            interval_seconds=self.interval_seconds,
+            scene_detection=self.scene_detection,
+            keyword_boost=self.keyword_boost,
+            scene_threshold=self.scene_threshold,
         )
         tmp_manifest_path = manifest_path.parent / f"{manifest_path.name}.tmp"
         try:
@@ -345,31 +336,125 @@ class FrameExtractionService:
             return _FrameExtractionOutcome(row.id, extracted=True)
         return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: frames saved to frames.json but metadata.json could not be updated",))
 
+    def _detect_scenes_with_fallback(
+        self,
+        row: VideoRow,
+        source_video: Path,
+        progress: ProgressReporter,
+        ffmpeg_threads: int,
+    ) -> list[float]:
+        def scene_progress(fraction: float) -> None:
+            progress.update_item(row.id, min(0.2, max(0.0, fraction * 0.2)))
+
+        hwaccel, acquired = self._acquire_gpu_slot()
+        try:
+            try:
+                return detect_scene_timestamps(
+                    source_video,
+                    threshold=self.scene_threshold,
+                    hwaccel=hwaccel,
+                    threads=ffmpeg_threads if hwaccel == "none" else None,
+                    total_duration_seconds=row.duration_seconds,
+                    progress_callback=scene_progress,
+                )
+            except SceneDetectionError as exc:
+                if hwaccel != "cuda":
+                    raise
+                gpu_exc = exc
+        finally:
+            self._release_gpu_slot(acquired)
+
+        try:
+            return detect_scene_timestamps(
+                source_video,
+                threshold=self.scene_threshold,
+                hwaccel="none",
+                threads=ffmpeg_threads,
+                total_duration_seconds=row.duration_seconds,
+                progress_callback=scene_progress,
+            )
+        except SceneDetectionError as cpu_exc:
+            raise SceneDetectionError(f"{cpu_exc} (after CUDA scene detection failed: {gpu_exc})") from cpu_exc
+
+    def _extract_frames_with_fallback(
+        self,
+        source_video: Path,
+        staging_dir: Path,
+        timestamps: list[float],
+        ffmpeg_threads: int,
+    ) -> list[tuple[float, Path]]:
+        hwaccel, acquired = self._acquire_gpu_slot()
+        try:
+            try:
+                return extract_frames(
+                    source_video,
+                    staging_dir,
+                    timestamps,
+                    threads=ffmpeg_threads,
+                    hwaccel=hwaccel,
+                )
+            except FrameExtractionError as exc:
+                if hwaccel != "cuda":
+                    raise
+                gpu_exc = exc
+        finally:
+            self._release_gpu_slot(acquired)
+
+        self._clear_staging_outputs(staging_dir)
+        try:
+            return extract_frames(
+                source_video,
+                staging_dir,
+                timestamps,
+                threads=ffmpeg_threads,
+                hwaccel="none",
+            )
+        except FrameExtractionError as cpu_exc:
+            raise FrameExtractionError(f"{cpu_exc} (after CUDA frame extraction failed: {gpu_exc})") from cpu_exc
+
+    def _acquire_gpu_slot(self) -> tuple[Literal["none", "cuda"], bool]:
+        if not self._cuda_decode_enabled or self._gpu_semaphore is None:
+            return "none", False
+        if self.hwaccel_mode == "auto":
+            acquired = self._gpu_semaphore.acquire(blocking=False)
+            return ("cuda", True) if acquired else ("none", False)
+        self._gpu_semaphore.acquire()
+        return "cuda", True
+
+    def _release_gpu_slot(self, acquired: bool) -> None:
+        if acquired and self._gpu_semaphore is not None:
+            self._gpu_semaphore.release()
+
+    def _clear_staging_outputs(self, staging_dir: Path) -> None:
+        for existing in staging_dir.glob("frame_*.jpg"):
+            existing.unlink(missing_ok=True)
+        (staging_dir / "select.filter").unlink(missing_ok=True)
+
     def _remove_stale_frame_files(self, frames_dir: Path, *, keep_count: int) -> None:
-        """Remove any frame_NNNN.jpg left over from a previous run whose
-        index falls beyond the current (dense, 1-based) count -- e.g. a
-        prior run with a smaller --interval-seconds produced more frames
-        than this one. New file numbering is always dense from 1, so any
-        higher-numbered file still on disk after finalization is
-        necessarily a leftover, never part of the current manifest."""
         for existing in frames_dir.glob("frame_*.jpg"):
             try:
                 index = int(existing.stem.split("_", 1)[1])
             except (IndexError, ValueError):
-                continue  # not one of ours (unexpected name shape) -- leave it alone
+                continue
             if index > keep_count:
                 existing.unlink(missing_ok=True)
 
-    def _dedup_by_hash(self, matched: list[tuple[FrameCandidate, float, Path]]) -> list[tuple[float, Path, str]]:
-        """Drop a boosted (scene/keyword) frame that is a near-duplicate of
-        the immediately preceding *kept* frame -- interval frames are never
-        dropped, they are the guaranteed pacing baseline. This is
-        adjacent-frame dedup only (not the content-level dedup that is
-        README §20.3's job, a later phase); see core/utils/frame_hash.py."""
+    def _dedup_by_hash(
+        self,
+        matched: list[tuple[FrameCandidate, float, Path]],
+        *,
+        ffmpeg_threads: int,
+    ) -> list[tuple[float, Path, str]]:
         kept: list[tuple[float, Path, str]] = []
         previous_hash: str | None = None
-        for candidate, pts, path in matched:
-            hash_hex = average_hash(path)
+        if len(matched) > 16:
+            hash_workers = min(8, max(1, ffmpeg_threads))
+            with ThreadPoolExecutor(max_workers=hash_workers) as executor:
+                hash_values = list(executor.map(lambda item: average_hash(item[2]), matched))
+        else:
+            hash_values = [average_hash(path) for _candidate, _pts, path in matched]
+
+        for (candidate, pts, path), hash_hex in zip(matched, hash_values):
             if candidate.priority > INTERVAL_PRIORITY and previous_hash is not None:
                 if is_near_duplicate(hash_hex, previous_hash):
                     path.unlink(missing_ok=True)
@@ -379,11 +464,6 @@ class FrameExtractionService:
         return kept
 
     def _reconcile_metadata(self, video_dir: Path, frames_rel: Path) -> bool:
-        """Ensure metadata.json's frames_path points at the concrete frames
-        directory (frames_rel, project-relative posix). Returns False --
-        never raises -- if metadata.json can't be loaded or saved, so the
-        caller can fold that into a per-video error without aborting the
-        run. Mirrors AudioExtractionService/TranscriptionService exactly."""
         metadata_path = video_dir / "metadata.json"
         try:
             metadata = VideoMetadata.load(metadata_path)
@@ -392,7 +472,7 @@ class FrameExtractionService:
 
         target = frames_rel.as_posix()
         if metadata.frames_path == target:
-            return True  # already correct, no write needed
+            return True
 
         try:
             metadata.model_copy(update={"frames_path": target}).save(metadata_path)

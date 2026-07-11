@@ -81,17 +81,6 @@ def test_frames_missing_ffmpeg_fails(tmp_path, monkeypatch):
     assert "ffmpeg" in result.output.lower()
 
 
-def test_frames_scene_detection_unavailable_fails(tmp_path, monkeypatch):
-    _ingest_one_video(tmp_path)
-    _ingest_via_cli(monkeypatch, "demo")
-    _available_ffmpeg(monkeypatch)
-    monkeypatch.setattr(frame_extraction_service_module, "scenedetect_available", lambda: False)
-
-    result = runner.invoke(app, ["frames", "demo", "--no-keyword-boost"])
-    assert result.exit_code == 1
-    assert "scenedetect" in result.output.lower()
-
-
 def test_frames_per_video_error_warns_without_failing(tmp_path, monkeypatch):
     _ingest_one_video(tmp_path)
     _ingest_via_cli(monkeypatch, "demo")
@@ -128,7 +117,7 @@ def test_frames_accepts_interval_and_workers_flags(tmp_path, monkeypatch):
     _stub_extract_frames(monkeypatch)
 
     result = runner.invoke(
-        app, ["frames", "demo", "--no-scene-detection", "--no-keyword-boost", "--interval-seconds", "5", "--workers", "1"],
+        app, ["frames", "demo", "--no-scene-detection", "--no-keyword-boost", "--interval-seconds", "5", "--workers", "1", "--scene-threshold", "0.2", "--hwaccel", "none"],
     )
     assert result.exit_code == 0
     assert (custom / "workdir" / "demo" / "frames" / "frames.json").is_file()

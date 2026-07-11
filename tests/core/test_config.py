@@ -44,6 +44,8 @@ frames:
   interval_seconds: 8
   scene_detection: true
   keyword_boost: true
+  scene_threshold: 0.1
+  hwaccel: "auto"
   workers: "auto"
 
 ocr:
@@ -174,6 +176,8 @@ def test_invalid_yaml_raises(tmp_path):
         "llm:\n  temperature: 5.0\n",
         "retrieval:\n  top_k: 0\n",
         "chunking:\n  min_duration_seconds: 500\n  max_duration_seconds: 100\n",
+        "frames:\n  scene_threshold: 0\n",
+        "frames:\n  scene_threshold: 1\n",
     ],
 )
 def test_range_and_cross_field_validation(tmp_path, override):
@@ -316,7 +320,32 @@ def test_ocr_defaults():
     assert config.ocr.min_confidence == 0.65
     assert config.ocr.workers == "auto"
     assert config.frames.workers == "auto"
+    assert config.frames.scene_threshold == 0.10
+    assert config.frames.hwaccel == "auto"
 
+
+def test_frames_runtime_fields_accept_overrides(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        yaml.safe_dump({
+            "project": {"name": "Demo", "slug": "demo"},
+            "frames": {"scene_threshold": 0.25, "hwaccel": "cuda"},
+        }),
+        encoding="utf-8",
+    )
+    config = ProjectConfig.load(path)
+    assert config.frames.scene_threshold == 0.25
+    assert config.frames.hwaccel == "cuda"
+
+
+def test_frames_hwaccel_rejects_unknown_value(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        yaml.safe_dump({"project": {"name": "Demo", "slug": "demo"}, "frames": {"hwaccel": "gpu"}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(InvalidConfigError):
+        ProjectConfig.load(path)
 
 def test_concurrency_and_transcription_runtime_defaults_roundtrip():
     config = ProjectConfig.default(name="Demo", slug="demo")

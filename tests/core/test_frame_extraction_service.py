@@ -12,7 +12,6 @@ from videodoc.core.errors import (
     DatabaseError,
     ExternalToolNotFoundError,
     NoVideosFoundError,
-    SceneDetectionUnavailableError,
 )
 from videodoc.core.models.frame_manifest import FrameManifest
 from videodoc.core.models.video_metadata import VideoMetadata
@@ -119,7 +118,7 @@ def _stub_extract_frames(monkeypatch, variant_for_timestamp=None):
 def _no_boost_service(project_dir, config, **kwargs):
     """Most tests don't care about scene detection or keyword boost --
     disabling both up front keeps them focused on the extraction/idempotency
-    machinery being tested, without needing a scenedetect stub or transcript
+    machinery being tested, without needing a scene-detection stub or transcript
     segments."""
     return FrameExtractionService(
         project_dir, config, scene_detection_override=False, keyword_boost_override=False, **kwargs
@@ -164,32 +163,20 @@ def test_missing_ffmpeg_raises_with_videos_present(tmp_path, monkeypatch):
         _no_boost_service(project_dir, _config()).run()
 
 
-def test_scene_detection_unavailable_raises(tmp_path, monkeypatch):
-    project_dir = tmp_path / "demo"
-    project_dir.mkdir()
-    _seed_video(project_dir, _config())
-    _available_ffmpeg(monkeypatch)
-    monkeypatch.setattr(frame_extraction_service_module, "scenedetect_available", lambda: False)
-
-    with pytest.raises(SceneDetectionUnavailableError):
-        FrameExtractionService(project_dir, _config(), keyword_boost_override=False).run()
-
-
-def test_scene_detection_disabled_skips_availability_check(tmp_path, monkeypatch):
+def test_scene_detection_disabled_skips_detector(tmp_path, monkeypatch):
     project_dir = tmp_path / "demo"
     project_dir.mkdir()
     _seed_video(project_dir, _config())
     _available_ffmpeg(monkeypatch)
     _stub_extract_frames(monkeypatch)
     monkeypatch.setattr(
-        frame_extraction_service_module, "scenedetect_available",
-        lambda: (_ for _ in ()).throw(AssertionError("must not be called when scene_detection is disabled")),
+        frame_extraction_service_module,
+        "detect_scene_timestamps",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not be called when scene_detection is disabled")),
     )
 
     result = _no_boost_service(project_dir, _config()).run()
     assert result.extracted == ("demo",)
-
-
 def test_single_video_extracted_writes_manifest_db_and_metadata(tmp_path, monkeypatch):
     project_dir = tmp_path / "demo"
     project_dir.mkdir()
@@ -423,24 +410,22 @@ def test_missing_ffmpeg_does_not_raise_when_every_video_is_already_self_healable
     assert second.errors == ()
 
 
-def test_scene_detection_unavailable_does_not_raise_when_every_video_is_already_self_healable(tmp_path, monkeypatch):
+def test_ffmpeg_not_required_when_scene_enabled_and_every_video_is_already_self_healable(tmp_path, monkeypatch):
     project_dir = tmp_path / "demo"
     project_dir.mkdir()
     config = _config()
     _seed_video(project_dir, config, duration_seconds=20.0)
     _available_ffmpeg(monkeypatch)
     _stub_extract_frames(monkeypatch)
-    monkeypatch.setattr(frame_extraction_service_module, "detect_scene_timestamps", lambda video_path: [])
+    monkeypatch.setattr(frame_extraction_service_module, "detect_scene_timestamps", lambda video_path, **kwargs: [])
 
     first = FrameExtractionService(project_dir, config, keyword_boost_override=False, interval_seconds_override=8).run()
     assert first.extracted == ("demo",)
 
-    monkeypatch.setattr(frame_extraction_service_module, "scenedetect_available", lambda: False)
+    monkeypatch.setattr(frame_extraction_service_module.shutil, "which", lambda name: None)
     second = FrameExtractionService(project_dir, config, keyword_boost_override=False, interval_seconds_override=8).run()
     assert second.skipped == ("demo",)
     assert second.errors == ()
-
-
 def test_rerun_with_different_interval_reextracts_instead_of_silently_skipping(tmp_path, monkeypatch):
     """Regression test: a frames.json produced under one set of settings
     must not be silently treated as 'done' when the user asks for
@@ -506,6 +491,199 @@ def test_rerun_with_same_settings_still_skips(tmp_path, monkeypatch):
     assert result.extracted == ()
     assert call_count["n"] == 1  # extract_frames never called again
 
+
+def test_scene_threshold_change_reextracts_when_scene_detection_enabled(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    monkeypatch.setattr(frame_extraction_service_module, "detect_scene_timestamps", lambda video_path, **kwargs: [])
+    call_count = {"n": 0}
+
+    def counting_extract(video_path, output_dir, timestamps, **kwargs):
+        call_count["n"] += 1
+        result = []
+        for i, t in enumerate(sorted(timestamps), start=1):
+            path = output_dir / f"frame_{i:05d}.jpg"
+            _write_pattern_jpeg(path, 0)
+            result.append((t, path))
+        return result
+
+    monkeypatch.setattr(frame_extraction_service_module, "extract_frames", counting_extract)
+
+    first = FrameExtractionService(
+        project_dir, config, keyword_boost_override=False, interval_seconds_override=8, scene_threshold_override=0.1,
+    ).run()
+    second = FrameExtractionService(
+        project_dir, config, keyword_boost_override=False, interval_seconds_override=8, scene_threshold_override=0.2,
+    ).run()
+
+    assert first.extracted == ("demo",)
+    assert second.extracted == ("demo",)
+    assert call_count["n"] == 2
+
+
+def test_scene_threshold_change_skips_when_scene_detection_disabled(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    call_count = {"n": 0}
+
+    def counting_extract(video_path, output_dir, timestamps, **kwargs):
+        call_count["n"] += 1
+        result = []
+        for i, t in enumerate(sorted(timestamps), start=1):
+            path = output_dir / f"frame_{i:05d}.jpg"
+            _write_pattern_jpeg(path, 0)
+            result.append((t, path))
+        return result
+
+    monkeypatch.setattr(frame_extraction_service_module, "extract_frames", counting_extract)
+
+    first = _no_boost_service(project_dir, config, interval_seconds_override=8, scene_threshold_override=0.1).run()
+    second = _no_boost_service(project_dir, config, interval_seconds_override=8, scene_threshold_override=0.2).run()
+
+    assert first.extracted == ("demo",)
+    assert second.skipped == ("demo",)
+    assert call_count["n"] == 1
+
+
+def test_legacy_manifest_without_scene_threshold_reextracts_when_scene_detection_enabled(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _, video_dir = _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    monkeypatch.setattr(frame_extraction_service_module, "detect_scene_timestamps", lambda video_path, **kwargs: [])
+    call_count = {"n": 0}
+
+    def counting_extract(video_path, output_dir, timestamps, **kwargs):
+        call_count["n"] += 1
+        result = []
+        for i, t in enumerate(sorted(timestamps), start=1):
+            path = output_dir / f"frame_{i:05d}.jpg"
+            _write_pattern_jpeg(path, 0)
+            result.append((t, path))
+        return result
+
+    monkeypatch.setattr(frame_extraction_service_module, "extract_frames", counting_extract)
+    FrameExtractionService(project_dir, config, keyword_boost_override=False, interval_seconds_override=8).run()
+
+    manifest_path = video_dir / "frames" / "frames.json"
+    raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    raw.pop("scene_threshold")
+    manifest_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    second = FrameExtractionService(project_dir, config, keyword_boost_override=False, interval_seconds_override=8).run()
+
+    assert second.extracted == ("demo",)
+    assert call_count["n"] == 2
+
+
+def test_hwaccel_cuda_scene_detection_falls_back_to_cpu(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    _stub_extract_frames(monkeypatch)
+    calls = []
+
+    def detect(video_path, **kwargs):
+        calls.append(kwargs.get("hwaccel"))
+        if kwargs.get("hwaccel") == "cuda":
+            raise SceneDetectionError("cuda scene failed")
+        return []
+
+    monkeypatch.setattr(frame_extraction_service_module, "detect_scene_timestamps", detect)
+
+    result = FrameExtractionService(project_dir, config, keyword_boost_override=False, hwaccel_override="cuda").run()
+
+    assert result.extracted == ("demo",)
+    assert calls == ["cuda", "none"]
+
+
+def test_hwaccel_cuda_frame_extraction_falls_back_to_cpu_and_cleans_partial(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    calls = []
+
+    def extract(video_path, output_dir, timestamps, **kwargs):
+        hwaccel = kwargs.get("hwaccel")
+        calls.append(hwaccel)
+        if hwaccel == "cuda":
+            (output_dir / "frame_00001.jpg").write_bytes(b"partial")
+            raise FrameExtractionError("cuda decode failed")
+        assert not (output_dir / "frame_00001.jpg").exists()
+        result = []
+        for i, t in enumerate(sorted(timestamps), start=1):
+            path = output_dir / f"frame_{i:05d}.jpg"
+            _write_pattern_jpeg(path, 0)
+            result.append((t, path))
+        return result
+
+    monkeypatch.setattr(frame_extraction_service_module, "extract_frames", extract)
+
+    result = _no_boost_service(project_dir, config, hwaccel_override="cuda").run()
+
+    assert result.extracted == ("demo",)
+    assert calls == ["cuda", "none"]
+
+
+def test_hwaccel_auto_uses_cpu_when_gpu_slots_are_unavailable(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    monkeypatch.setattr(frame_extraction_service_module, "FFMPEG_GPU_DECODE_SESSIONS", 0)
+    monkeypatch.setattr(frame_extraction_service_module, "ffmpeg_cuda_available", lambda: True)
+    calls = []
+
+    def extract(video_path, output_dir, timestamps, **kwargs):
+        calls.append(kwargs.get("hwaccel"))
+        result = []
+        for i, t in enumerate(sorted(timestamps), start=1):
+            path = output_dir / f"frame_{i:05d}.jpg"
+            _write_pattern_jpeg(path, 0)
+            result.append((t, path))
+        return result
+
+    monkeypatch.setattr(frame_extraction_service_module, "extract_frames", extract)
+
+    result = _no_boost_service(project_dir, config, hwaccel_override="auto").run()
+
+    assert result.extracted == ("demo",)
+    assert calls == ["none"]
+
+
+def test_hwaccel_does_not_influence_skip(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    _stub_extract_frames(monkeypatch)
+
+    first = _no_boost_service(project_dir, config, interval_seconds_override=8, hwaccel_override="none").run()
+    assert first.extracted == ("demo",)
+
+    monkeypatch.setattr(frame_extraction_service_module.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        frame_extraction_service_module,
+        "extract_frames",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("extract should be skipped")),
+    )
+    second = _no_boost_service(project_dir, config, interval_seconds_override=8, hwaccel_override="cuda").run()
+
+    assert second.skipped == ("demo",)
+    assert second.errors == ()
 
 def test_zero_frames_surviving_extraction_is_reported_as_error(tmp_path, monkeypatch):
     """Regression test: ffmpeg can succeed (matching frame/pts counts) while

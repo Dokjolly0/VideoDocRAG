@@ -55,12 +55,6 @@ class InvalidFrameManifestError(VideoDocError):
     """Raised when a video's frames.json manifest is missing, malformed, or fails validation."""
 
 
-class SceneDetectionUnavailableError(VideoDocError):
-    """Raised once, up front, when config.frames.scene_detection is enabled but the
-    'scenedetect' package (or its video backend) cannot be imported -- checked a single
-    time per run rather than once per video, mirroring the shutil.which("ffmpeg") check
-    in AudioExtractionService."""
-
 
 class InvalidOCRManifestError(VideoDocError):
     """Raised when a video's ocr.json manifest is missing, malformed, or fails validation."""
@@ -68,8 +62,8 @@ class InvalidOCRManifestError(VideoDocError):
 
 class OCREngineUnavailableError(VideoDocError):
     """Raised once, up front, when at least one video needs fresh OCR but the 'rapidocr'
-    package cannot be imported -- checked a single time per run rather than once per frame,
-    mirroring SceneDetectionUnavailableError. A per-video failure to actually instantiate/run
+    package cannot be imported -- checked a single time per run rather than once per frame.
+    A per-video failure to actually instantiate/run
     the engine (e.g. a corrupt cached model file) is a different, per-video error instead --
     see OCRService."""
 
