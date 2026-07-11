@@ -17,13 +17,28 @@ from videodoc.core.services.transcription_service import TranscriptionService
 
 def transcribe_command(
     project: str = typer.Argument(..., help="Project name or path"),
-    workers: int | None = typer.Option(None, "--workers", min=1, help="Number of transcriptions to run concurrently."),
+    workers: int | None = typer.Option(None, "--workers", min=1, help="Number of videos to transcribe concurrently."),
     device: Literal["auto", "cpu", "cuda"] | None = typer.Option(None, "--device", help="Transcription device override."),
+    compute_type: str | None = typer.Option(None, "--compute-type", help="CTranslate2 compute type override, e.g. int8_float16 or float16."),
+    mode: Literal["auto", "standard", "batched"] | None = typer.Option(None, "--mode", help="Transcription mode override."),
+    batch_size: int | None = typer.Option(None, "--batch-size", min=1, help="GPU batch size for batched transcription."),
+    beam_size: int | None = typer.Option(None, "--beam-size", min=1, help="Beam size for decoding; 1 is fastest."),
+    word_timestamps: bool | None = typer.Option(None, "--word-timestamps/--no-word-timestamps", help="Enable or disable word-level timestamps."),
 ) -> None:
     try:
         service = ProjectService.load(project)
         with RichProgressReporter(console) as reporter:
-            result = TranscriptionService(service.project_dir, service.config, workers_override=workers, device_override=device).run(progress=reporter)
+            result = TranscriptionService(
+                service.project_dir,
+                service.config,
+                workers_override=workers,
+                device_override=device,
+                compute_type_override=compute_type,
+                mode_override=mode,
+                batch_size_override=batch_size,
+                beam_size_override=beam_size,
+                word_timestamps_override=word_timestamps,
+            ).run(progress=reporter)
     except (
         ProjectNotFoundError,
         InvalidConfigError,

@@ -6,6 +6,8 @@ from typing import Literal
 from videodoc.core.utils.cuda import cuda_is_usable
 
 DEFAULT_GPU_WORKERS = 2
+DEFAULT_BATCHED_GPU_WORKERS = 1
+DEFAULT_GPU_BATCH_SIZE = 8
 
 
 def resolve_cpu_count() -> int:
@@ -22,10 +24,24 @@ def resolve_device(
     return selected
 
 
-def resolve_compute_type(configured: str, device: Literal["cpu", "cuda"]) -> str:
+def resolve_compute_type(configured: str, device: Literal["cpu", "cuda"], override: str | None = None) -> str:
+    if override is not None:
+        return override
     if configured != "auto":
         return configured
-    return "float16" if device == "cuda" else "int8"
+    return "int8_float16" if device == "cuda" else "int8"
+
+
+def resolve_transcription_mode(
+    configured: Literal["auto", "standard", "batched"],
+    override: Literal["auto", "standard", "batched"] | None,
+    *,
+    device: Literal["cpu", "cuda"],
+) -> Literal["standard", "batched"]:
+    selected = override if override is not None else configured
+    if selected == "auto":
+        return "batched" if device == "cuda" else "standard"
+    return selected
 
 
 def resolve_cpu_workers(configured: int | Literal["auto"], override: int | None) -> int:
@@ -46,10 +62,25 @@ def resolve_transcription_workers(
     override: int | None,
     *,
     device: Literal["cpu", "cuda"],
+    mode: Literal["standard", "batched"] = "standard",
 ) -> int:
     if device == "cuda":
-        return resolve_gpu_workers(configured, override, default=DEFAULT_GPU_WORKERS)
+        default = DEFAULT_BATCHED_GPU_WORKERS if mode == "batched" else DEFAULT_GPU_WORKERS
+        return resolve_gpu_workers(configured, override, default=default)
     return resolve_cpu_workers(configured, override)
+
+
+def resolve_transcription_batch_size(
+    configured: int | Literal["auto"],
+    override: int | None,
+    *,
+    device: Literal["cpu", "cuda"],
+    mode: Literal["standard", "batched"],
+) -> int | None:
+    if mode != "batched":
+        return None
+    default = DEFAULT_GPU_BATCH_SIZE if device == "cuda" else 1
+    return _resolve_positive_auto(configured, override, default=default)
 
 
 def resolve_cpu_threads(

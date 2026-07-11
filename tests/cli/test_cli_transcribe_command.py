@@ -44,7 +44,7 @@ def _fake_results():
 def _stub_transcription(monkeypatch, fn=None):
     monkeypatch.setattr(transcription_service_module, "load_whisper_model", lambda model_name, **kwargs: object())
 
-    def default(model, audio_path, *, language, word_timestamps, progress_callback=None):
+    def default(model, audio_path, *, language, word_timestamps, progress_callback=None, **kwargs):
         return _fake_results()
 
     monkeypatch.setattr(transcription_service_module, "transcribe_audio", fn or default)
@@ -105,7 +105,7 @@ def test_transcribe_per_video_error_warns_without_failing(tmp_path, monkeypatch)
     _ingest_via_cli(monkeypatch, "demo")
     _extract_audio_via_cli(monkeypatch, "demo")
 
-    def failing_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None):
+    def failing_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None, **kwargs):
         raise TranscriptionError("corrupt audio")
 
     _stub_transcription(monkeypatch, failing_transcribe)
@@ -128,7 +128,7 @@ def test_transcribe_rerun_shows_all_skipped(tmp_path, monkeypatch):
     skipped_line = next(line for line in result.stdout.splitlines() if "Skipped" in line)
     assert "1" in skipped_line
 
-def test_transcribe_workers_and_device_flags_reach_model_loader(tmp_path, monkeypatch):
+def test_transcribe_runtime_flags_reach_model_loader_and_transcriber(tmp_path, monkeypatch):
     _ingest_one_video(tmp_path)
     _ingest_via_cli(monkeypatch, "demo")
     _extract_audio_via_cli(monkeypatch, "demo")
@@ -137,15 +137,41 @@ def test_transcribe_workers_and_device_flags_reach_model_loader(tmp_path, monkey
 
     def load_model(model_name, **kwargs):
         captured["model_name"] = model_name
-        captured["kwargs"] = kwargs
-        return object()
+        captured["load_kwargs"] = kwargs
+        return "loaded-model"
+
+    def build_pipeline(model):
+        captured["pipeline_model"] = model
+        return "batched-pipeline"
+
+    def fake_transcribe(model, audio_path, **kwargs):
+        captured["transcribe_model"] = model
+        captured["transcribe_kwargs"] = kwargs
+        return _fake_results()
 
     monkeypatch.setattr(transcription_service_module, "load_whisper_model", load_model)
-    monkeypatch.setattr(transcription_service_module, "transcribe_audio", lambda model, audio_path, **kwargs: _fake_results())
+    monkeypatch.setattr(transcription_service_module, "build_batched_pipeline", build_pipeline)
+    monkeypatch.setattr(transcription_service_module, "transcribe_audio", fake_transcribe)
 
-    result = runner.invoke(app, ["transcribe", "demo", "--workers", "1", "--device", "cpu"])
+    result = runner.invoke(app, [
+        "transcribe", "demo",
+        "--workers", "1",
+        "--device", "cuda",
+        "--compute-type", "float16",
+        "--mode", "batched",
+        "--batch-size", "4",
+        "--beam-size", "2",
+        "--no-word-timestamps",
+    ])
 
     assert result.exit_code == 0
     assert captured["model_name"] == "large-v3"
-    assert captured["kwargs"]["device"] == "cpu"
-    assert captured["kwargs"]["num_workers"] == 1
+    assert captured["load_kwargs"]["device"] == "cuda"
+    assert captured["load_kwargs"]["compute_type"] == "float16"
+    assert captured["load_kwargs"]["num_workers"] == 1
+    assert captured["pipeline_model"] == "loaded-model"
+    assert captured["transcribe_model"] == "batched-pipeline"
+    assert captured["transcribe_kwargs"]["mode"] == "batched"
+    assert captured["transcribe_kwargs"]["batch_size"] == 4
+    assert captured["transcribe_kwargs"]["beam_size"] == 2
+    assert captured["transcribe_kwargs"]["word_timestamps"] is False

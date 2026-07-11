@@ -22,10 +22,18 @@ from videodoc.core.utils.hardware import (
     resolve_cpu_threads,
     resolve_device,
     resolve_executor_workers,
+    resolve_transcription_batch_size,
+    resolve_transcription_mode,
     resolve_transcription_workers,
 )
 from videodoc.core.utils.progress import ProgressReporter
-from videodoc.core.utils.transcription import TranscriptionError, TranscriptSegmentResult, load_whisper_model, transcribe_audio
+from videodoc.core.utils.transcription import (
+    TranscriptionError,
+    TranscriptSegmentResult,
+    build_batched_pipeline,
+    load_whisper_model,
+    transcribe_audio,
+)
 
 _SUPPORTED_ENGINES = ("faster-whisper",)
 
@@ -44,6 +52,19 @@ class _TranscriptionWorkItem:
 
 
 @dataclass(frozen=True)
+class _TranscriptionRuntime:
+    engine: Any
+    mode: Literal["standard", "batched"]
+    word_timestamps: bool
+    batch_size: int | None
+    beam_size: int
+    best_of: int
+    vad_filter: bool
+    chunk_length_seconds: int
+    condition_on_previous_text: bool
+
+
+@dataclass(frozen=True)
 class _FreshTranscriptionOutcome:
     row: VideoRow
     segments: tuple[TranscriptSegment, ...] = ()
@@ -58,11 +79,21 @@ class TranscriptionService:
         *,
         workers_override: int | None = None,
         device_override: Literal["auto", "cpu", "cuda"] | None = None,
+        compute_type_override: str | None = None,
+        mode_override: Literal["auto", "standard", "batched"] | None = None,
+        batch_size_override: int | None = None,
+        beam_size_override: int | None = None,
+        word_timestamps_override: bool | None = None,
     ) -> None:
         self.project_dir = project_dir
         self.config = config
         self.workers_override = workers_override
         self.device_override = device_override
+        self.compute_type_override = compute_type_override
+        self.mode_override = mode_override
+        self.batch_size_override = batch_size_override
+        self.beam_size_override = beam_size_override
+        self.word_timestamps_override = word_timestamps_override
 
     def run(self, progress: ProgressReporter | None = None) -> TranscriptionResult:
         progress = progress or ProgressReporter()
@@ -129,11 +160,13 @@ class TranscriptionService:
 
         if fresh_items:
             device = resolve_device(self.config.transcription.device, self.device_override)
-            compute_type = resolve_compute_type(self.config.transcription.compute_type, device)
+            mode = resolve_transcription_mode(self.config.transcription.mode, self.mode_override, device=device)
+            compute_type = resolve_compute_type(self.config.transcription.compute_type, device, self.compute_type_override)
             configured_workers = resolve_transcription_workers(
                 self.config.transcription.workers,
                 self.workers_override,
                 device=device,
+                mode=mode,
             )
             executor_workers = resolve_executor_workers(configured_workers, len(fresh_items))
             cpu_threads = resolve_cpu_threads(
@@ -142,6 +175,18 @@ class TranscriptionService:
                 device=device,
                 workers=executor_workers,
             )
+            batch_size = resolve_transcription_batch_size(
+                self.config.transcription.batch_size,
+                self.batch_size_override,
+                device=device,
+                mode=mode,
+            )
+            word_timestamps = (
+                self.word_timestamps_override
+                if self.word_timestamps_override is not None
+                else self.config.transcription.word_timestamps
+            )
+            beam_size = self.beam_size_override or self.config.transcription.beam_size
 
             # faster-whisper deliberately disables its own download progress
             # bar (see faster_whisper.utils.download_model's tqdm_class=
@@ -151,9 +196,10 @@ class TranscriptionService:
             # of reimplementing huggingface_hub's download ourselves.
             progress.announce(
                 f"Loading transcription model '{self.config.transcription.model}' "
-                f"(device={device}, compute_type={compute_type}, workers={executor_workers}, "
-                f"cpu_threads={cpu_threads}) -- first use may download several GB from Hugging Face "
-                f"and show no progress while doing so."
+                f"(device={device}, compute_type={compute_type}, mode={mode}, workers={executor_workers}, "
+                f"batch_size={batch_size or '-'}, beam_size={beam_size}, word_timestamps={word_timestamps}, "
+                f"vad_filter={self.config.transcription.vad_filter}, cpu_threads={cpu_threads}) -- first use may "
+                f"download several GB from Hugging Face and show no progress while doing so."
             )
             try:
                 model = load_whisper_model(
@@ -163,13 +209,26 @@ class TranscriptionService:
                     cpu_threads=cpu_threads,
                     num_workers=executor_workers,
                 )
+                transcription_engine = build_batched_pipeline(model) if mode == "batched" else model
             except TranscriptionError as exc:
                 raise TranscriptionEngineError(
                     f"Could not load transcription engine (model '{self.config.transcription.model}'): {exc}"
                 ) from exc
 
+            runtime = _TranscriptionRuntime(
+                engine=transcription_engine,
+                mode=mode,
+                word_timestamps=word_timestamps,
+                batch_size=batch_size,
+                beam_size=beam_size,
+                best_of=self.config.transcription.best_of,
+                vad_filter=self.config.transcription.vad_filter,
+                chunk_length_seconds=self.config.transcription.chunk_length_seconds,
+                condition_on_previous_text=self.config.transcription.condition_on_previous_text,
+            )
+
             with ThreadPoolExecutor(max_workers=executor_workers) as executor:
-                futures = [executor.submit(self._transcribe_fresh, item, total, progress, model) for item in fresh_items]
+                futures = [executor.submit(self._transcribe_fresh, item, total, progress, runtime) for item in fresh_items]
                 for future in futures:
                     outcome = future.result()
                     if outcome.error is not None:
@@ -222,7 +281,7 @@ class TranscriptionService:
         item: _TranscriptionWorkItem,
         total: int,
         progress: ProgressReporter,
-        model: Any,
+        runtime: _TranscriptionRuntime,
     ) -> _FreshTranscriptionOutcome:
         row = item.row
         progress.start_item(row.id, item.index, total)
@@ -232,9 +291,17 @@ class TranscriptionService:
             audio_path = video_dir / "audio" / f"{row.id}.wav"
             try:
                 results = transcribe_audio(
-                    model, audio_path,
+                    runtime.engine,
+                    audio_path,
                     language=self.config.transcription.language,
-                    word_timestamps=self.config.transcription.word_timestamps,
+                    word_timestamps=runtime.word_timestamps,
+                    mode=runtime.mode,
+                    batch_size=runtime.batch_size,
+                    beam_size=runtime.beam_size,
+                    best_of=runtime.best_of,
+                    vad_filter=runtime.vad_filter,
+                    chunk_length_seconds=runtime.chunk_length_seconds,
+                    condition_on_previous_text=runtime.condition_on_previous_text,
                     progress_callback=lambda fraction, video_id=row.id: progress.update_item(video_id, fraction),
                 )
             except TranscriptionError as exc:

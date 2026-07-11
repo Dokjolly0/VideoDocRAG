@@ -312,9 +312,17 @@ def test_concurrency_and_transcription_runtime_defaults_roundtrip():
     assert config.ingest.workers == "auto"
     assert config.audio.workers == "auto"
     assert config.transcription.device == "auto"
+    assert config.transcription.word_timestamps is False
     assert config.transcription.compute_type == "auto"
+    assert config.transcription.mode == "auto"
     assert config.transcription.workers == "auto"
     assert config.transcription.cpu_threads == "auto"
+    assert config.transcription.batch_size == "auto"
+    assert config.transcription.beam_size == 1
+    assert config.transcription.best_of == 1
+    assert config.transcription.vad_filter is True
+    assert config.transcription.chunk_length_seconds == 30
+    assert config.transcription.condition_on_previous_text is False
     reparsed = ProjectConfig.model_validate(yaml.safe_load(config.to_yaml()))
     assert reparsed == config
 
@@ -329,8 +337,15 @@ def test_concurrency_and_transcription_runtime_fields_accept_positive_ints(tmp_p
             "transcription": {
                 "device": "cuda",
                 "compute_type": "float16",
+                "mode": "batched",
                 "workers": 2,
                 "cpu_threads": 1,
+                "batch_size": 8,
+                "beam_size": 2,
+                "best_of": 2,
+                "vad_filter": False,
+                "chunk_length_seconds": 45,
+                "condition_on_previous_text": True,
             },
         }),
         encoding="utf-8",
@@ -340,8 +355,15 @@ def test_concurrency_and_transcription_runtime_fields_accept_positive_ints(tmp_p
     assert config.audio.workers == 4
     assert config.transcription.device == "cuda"
     assert config.transcription.compute_type == "float16"
+    assert config.transcription.mode == "batched"
     assert config.transcription.workers == 2
     assert config.transcription.cpu_threads == 1
+    assert config.transcription.batch_size == 8
+    assert config.transcription.beam_size == 2
+    assert config.transcription.best_of == 2
+    assert config.transcription.vad_filter is False
+    assert config.transcription.chunk_length_seconds == 45
+    assert config.transcription.condition_on_previous_text is True
 
 
 @pytest.mark.parametrize("section,field", [
@@ -349,6 +371,7 @@ def test_concurrency_and_transcription_runtime_fields_accept_positive_ints(tmp_p
     ("audio", "workers"),
     ("transcription", "workers"),
     ("transcription", "cpu_threads"),
+    ("transcription", "batch_size"),
 ])
 def test_concurrency_fields_reject_non_positive_ints(tmp_path, section, field):
     path = tmp_path / "config.yaml"

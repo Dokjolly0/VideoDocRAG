@@ -85,7 +85,7 @@ def _stub_load_model(monkeypatch, fn=None):
 
 
 def _stub_transcribe(monkeypatch, fn=None):
-    def default(model, audio_path, *, language, word_timestamps, progress_callback=None):
+    def default(model, audio_path, *, language, word_timestamps, progress_callback=None, **kwargs):
         return _fake_results()
 
     monkeypatch.setattr(transcription_service_module, "transcribe_audio", fn or default)
@@ -224,6 +224,53 @@ def test_does_not_announce_when_everything_already_transcribed(tmp_path, monkeyp
     assert reporter.announced == []
 
 
+
+def test_cuda_auto_uses_batched_pipeline_and_runtime_options(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    config = config.model_copy(update={
+        "transcription": config.transcription.model_copy(update={"device": "cuda", "mode": "auto"})
+    })
+    _seed_video(project_dir, config)
+
+    loaded_model = object()
+    batched_pipeline = object()
+    captured = {}
+
+    def load_model(model_name, **kwargs):
+        captured["model_name"] = model_name
+        captured["load_kwargs"] = kwargs
+        return loaded_model
+
+    def build_pipeline(model):
+        captured["pipeline_model"] = model
+        return batched_pipeline
+
+    def fake_transcribe(engine, audio_path, **kwargs):
+        captured["engine"] = engine
+        captured["transcribe_kwargs"] = kwargs
+        return _fake_results()
+
+    monkeypatch.setattr(transcription_service_module, "load_whisper_model", load_model)
+    monkeypatch.setattr(transcription_service_module, "build_batched_pipeline", build_pipeline)
+    monkeypatch.setattr(transcription_service_module, "transcribe_audio", fake_transcribe)
+
+    result = TranscriptionService(project_dir, config).run()
+
+    assert result.transcribed == ("demo",)
+    assert captured["model_name"] == "large-v3"
+    assert captured["load_kwargs"]["device"] == "cuda"
+    assert captured["load_kwargs"]["compute_type"] == "int8_float16"
+    assert captured["load_kwargs"]["num_workers"] == 1
+    assert captured["pipeline_model"] is loaded_model
+    assert captured["engine"] is batched_pipeline
+    assert captured["transcribe_kwargs"]["mode"] == "batched"
+    assert captured["transcribe_kwargs"]["batch_size"] == 8
+    assert captured["transcribe_kwargs"]["beam_size"] == 1
+    assert captured["transcribe_kwargs"]["word_timestamps"] is False
+    assert captured["transcribe_kwargs"]["vad_filter"] is True
+    assert captured["transcribe_kwargs"]["chunk_length_seconds"] == 30
 def test_single_video_transcribed_updates_metadata_and_db(tmp_path, monkeypatch):
     project_dir = tmp_path / "demo"
     project_dir.mkdir()
@@ -293,7 +340,7 @@ def test_skip_when_transcript_exists_call_count_zero(tmp_path, monkeypatch):
 
     call_count = {"n": 0}
 
-    def counting_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None):
+    def counting_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None, **kwargs):
         call_count["n"] += 1
         return _fake_results()
 
@@ -409,7 +456,7 @@ def test_one_bad_video_does_not_block_others(tmp_path, monkeypatch):
     _seed_video(project_dir, config, video_id="good", filename="Good.mp4")
     _stub_load_model(monkeypatch)
 
-    def selective_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None):
+    def selective_transcribe(model, audio_path, *, language, word_timestamps, progress_callback=None, **kwargs):
         if audio_path.name == "bad.wav":
             raise TranscriptionError("corrupt audio")
         return _fake_results()

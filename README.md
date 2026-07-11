@@ -1232,6 +1232,14 @@ transcription:
   engine: "faster-whisper"
   model: "large-v3"
   language: "it"
+  word_timestamps: false
+  device: "auto"
+  compute_type: "auto"
+  mode: "auto"
+  workers: "auto"
+  batch_size: "auto"
+  beam_size: 1
+  vad_filter: true
 
 ocr:
   engine: "paddleocr"
@@ -2434,10 +2442,20 @@ transcription:
   engine: "faster-whisper"
   model: "large-v3"
   language: "it"
-  word_timestamps: true
+  word_timestamps: false
+  device: "auto"
+  compute_type: "auto"
+  mode: "auto"
+  workers: "auto"
+  cpu_threads: "auto"
+  batch_size: "auto"
+  beam_size: 1
+  best_of: 1
+  vad_filter: true
+  chunk_length_seconds: 30
+  condition_on_previous_text: false
 
-frames:
-  interval_seconds: 8
+frames:  interval_seconds: 8
   scene_detection: true
   keyword_boost: true
 

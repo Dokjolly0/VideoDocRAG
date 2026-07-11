@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 
 class TranscriptionError(Exception):
@@ -67,12 +67,34 @@ def load_whisper_model(
         raise TranscriptionError(f"Could not load Whisper model '{model_name}': {exc}") from exc
 
 
+def build_batched_pipeline(model: Any) -> Any:
+    """Wrap a loaded WhisperModel in faster-whisper's batched pipeline."""
+    try:
+        from faster_whisper import BatchedInferencePipeline
+    except ImportError as exc:
+        raise TranscriptionError(f"faster-whisper batched pipeline is not importable: {exc}") from exc
+    except AttributeError as exc:
+        raise TranscriptionError("faster-whisper does not expose BatchedInferencePipeline") from exc
+
+    try:
+        return BatchedInferencePipeline(model)
+    except Exception as exc:
+        raise TranscriptionError(f"Could not initialize batched transcription pipeline: {exc}") from exc
+
+
 def transcribe_audio(
     model: Any,
     audio_path: Path,
     *,
     language: str,
     word_timestamps: bool,
+    mode: Literal["standard", "batched"] = "standard",
+    batch_size: int | None = None,
+    beam_size: int = 5,
+    best_of: int = 5,
+    vad_filter: bool = False,
+    chunk_length_seconds: int | None = None,
+    condition_on_previous_text: bool = True,
     progress_callback: Callable[[float], None] | None = None,
 ) -> list[TranscriptSegmentResult]:
     """Transcribes a single audio file with an already-loaded model.
@@ -89,11 +111,30 @@ def transcribe_audio(
     log-probability, typically <= 0, so this lands in (0, 1]) -- faster-
     whisper does not expose a direct 0-1 "confidence" field itself."""
     try:
-        segments_gen, info = model.transcribe(str(audio_path), language=language, word_timestamps=word_timestamps)
+        kwargs: dict[str, Any] = {
+            "language": language,
+            "word_timestamps": word_timestamps,
+            "beam_size": beam_size,
+            "best_of": best_of,
+            "vad_filter": vad_filter,
+            "condition_on_previous_text": condition_on_previous_text,
+        }
+        if chunk_length_seconds is not None:
+            kwargs["chunk_length"] = chunk_length_seconds
+        if mode == "batched":
+            if batch_size is not None:
+                kwargs["batch_size"] = batch_size
+            # Batched mode can still return chunk-level timestamps while
+            # sampling text-only tokens, which is much faster than decoding
+            # timestamp tokens or aligning word timestamps for every chunk.
+            kwargs["without_timestamps"] = not word_timestamps
+
+        segments_gen, info = model.transcribe(str(audio_path), **kwargs)
+        duration = getattr(info, "duration", None)
         results = []
         for segment in segments_gen:
-            if progress_callback is not None and info.duration:
-                progress_callback(min(1.0, float(segment.end) / info.duration))
+            if progress_callback is not None and duration:
+                progress_callback(min(1.0, float(segment.end) / duration))
             text = segment.text.strip()
             if not text:
                 # A silence/music/non-speech interval can yield a segment

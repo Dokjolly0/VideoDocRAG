@@ -4,11 +4,13 @@ import types
 
 import pytest
 
-from videodoc.core.utils.transcription import TranscriptionError, load_whisper_model, transcribe_audio
+from videodoc.core.utils.transcription import TranscriptionError, build_batched_pipeline, load_whisper_model, transcribe_audio
 
 
-def _install_fake_faster_whisper(monkeypatch, model_cls):
+def _install_fake_faster_whisper(monkeypatch, model_cls, pipeline_cls=None):
     fake_module = types.SimpleNamespace(WhisperModel=model_cls)
+    if pipeline_cls is not None:
+        fake_module.BatchedInferencePipeline = pipeline_cls
     monkeypatch.setitem(sys.modules, "faster_whisper", fake_module)
 
 
@@ -78,7 +80,14 @@ def test_transcribe_audio_happy_path(tmp_path):
     assert results[0].text == "Ciao a tutti"  # stripped
     assert results[0].confidence == pytest.approx(math.exp(-0.1))
     assert captured["audio_path"] == str(tmp_path / "a.wav")
-    assert captured["kwargs"] == {"language": "it", "word_timestamps": True}
+    assert captured["kwargs"] == {
+        "language": "it",
+        "word_timestamps": True,
+        "beam_size": 5,
+        "best_of": 5,
+        "vad_filter": False,
+        "condition_on_previous_text": True,
+    }
 
 
 def test_transcribe_audio_drops_empty_and_whitespace_only_segments(tmp_path):
@@ -166,6 +175,65 @@ def test_transcribe_audio_progress_callback_not_required(tmp_path):
 
     assert fractions == []
     assert len(results) == 1
+
+def test_build_batched_pipeline_wraps_loaded_model(monkeypatch):
+    wrapped = {}
+
+    class FakeModel:
+        pass
+
+    class FakePipeline:
+        def __init__(self, model):
+            wrapped["model"] = model
+
+    _install_fake_faster_whisper(monkeypatch, FakeModel, FakePipeline)
+    model = FakeModel()
+
+    pipeline = build_batched_pipeline(model)
+
+    assert isinstance(pipeline, FakePipeline)
+    assert wrapped["model"] is model
+
+
+def test_transcribe_audio_batched_passes_batch_options(tmp_path):
+    captured = {}
+    segments = [_FakeSegment(0.0, 30.0, "Ciao", -0.1)]
+    model = _FakeModelWithDuration(segments, duration=30.0)
+
+    def transcribe(audio_path, **kwargs):
+        captured["audio_path"] = audio_path
+        captured["kwargs"] = kwargs
+        return iter(segments), types.SimpleNamespace(duration=30.0)
+
+    model.transcribe = transcribe
+
+    results = transcribe_audio(
+        model,
+        tmp_path / "a.wav",
+        language="it",
+        word_timestamps=False,
+        mode="batched",
+        batch_size=8,
+        beam_size=1,
+        best_of=1,
+        vad_filter=True,
+        chunk_length_seconds=30,
+        condition_on_previous_text=False,
+    )
+
+    assert len(results) == 1
+    assert captured["kwargs"] == {
+        "language": "it",
+        "word_timestamps": False,
+        "beam_size": 1,
+        "best_of": 1,
+        "vad_filter": True,
+        "condition_on_previous_text": False,
+        "chunk_length": 30,
+        "batch_size": 8,
+        "without_timestamps": True,
+    }
+
 
 def test_load_whisper_model_passes_runtime_kwargs(monkeypatch):
     captured = {}

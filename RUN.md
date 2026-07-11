@@ -406,7 +406,7 @@ Project: corso-software-x
 +-----------------+
 ```
 
-Se nessun video ha ancora l'audio estratto (`extract-audio` non è mai stato eseguito), il comando fallisce subito (`exit code` 1) senza caricare alcun modello. Un problema di trascrizione su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0 — vedi §8 per un caso reale (libreria CUDA mancante) riscontrato durante lo sviluppo.
+Se nessun video ha ancora l'audio estratto (`extract-audio` non è mai stato eseguito), il comando fallisce subito (`exit code` 1) senza caricare alcun modello. Un problema di trascrizione su un singolo video non blocca gli altri: viene segnalato con un `Warning`, il comando resta a `exit code` 0 — vedi §8 per un caso reale (libreria CUDA mancante) riscontrato durante lo sviluppo. Su GPU NVIDIA, `auto` usa CUDA, `int8_float16`, modalità batched, VAD e `beam_size: 1` per tenere più piena la GPU su video lunghi.
 
 ### 5.10 Verificare lo stato dell'ambiente (`doctor`)
 
@@ -585,7 +585,13 @@ Esegui prima `videodoc doctor` (§5.10): il check "GPU / CUDA" rileva esattament
 - Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.
 - Se invece il problema impedisce già il caricamento del modello stesso (`WhisperModel(...)`) — è strutturale, non recuperabile per l'intero run: il comando fallisce con `Error: Could not load transcription engine ...` ed `exit code` `1`, senza processare alcun video.
 
-Non esiste ancora un'opzione di configurazione per forzare esplicitamente l'esecuzione su CPU (`config.transcription` non ha un campo `device`/`compute_type`); se hai una GPU NVIDIA reale e vuoi effettivamente usarla, puoi installare le librerie runtime CUDA come pacchetti pip puri, senza installare l'intero CUDA Toolkit di sistema (`videodoc setup` fa esattamente questo passaggio in automatico):
+`config.transcription` ora consente di scegliere esplicitamente `device`, `compute_type`, `mode`, `workers`, `batch_size` e altri parametri di decoding. Se vuoi forzare la CPU, usa ad esempio:
+
+```powershell
+videodoc transcribe <progetto> --device cpu --mode standard --compute-type int8
+```
+
+Se hai una GPU NVIDIA reale e vuoi usarla, puoi installare le librerie runtime CUDA come pacchetti pip puri, senza installare l'intero CUDA Toolkit di sistema (`videodoc setup` fa esattamente questo passaggio in automatico):
 
 ```powershell
 pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
@@ -600,7 +606,13 @@ $env:PATH = "<percorso-venv>\Lib\site-packages\nvidia\cublas\bin;<percorso-venv>
 Vale solo per la sessione di terminale corrente — da ripetere ad ogni nuova sessione, oppure aggiungi questi due percorsi al `PATH` di sistema in modo permanente. In alternativa, esegui su una macchina senza GPU rilevata (nessun problema di CUDA in quel caso, dato che `faster-whisper` non tenta nemmeno di usarla).
 
 **`videodoc transcribe` è molto lento o scarica diversi GB al primo avvio.**
-Il modello configurato (default `transcription.model: large-v3`) viene scaricato da Hugging Face al primo utilizzo reale e può essere lento su CPU. Per una prova rapida, modifica temporaneamente `transcription.model` in `config.yaml` con un modello più piccolo (es. `tiny` o `base`).
+Il modello configurato (default `transcription.model: large-v3`) viene scaricato da Hugging Face al primo utilizzo reale. Per throughput massimo su una GPU da 8 GB come una RTX 4070 Laptop, usa o lascia i default aggiornati: CUDA, `compute_type: int8_float16`, `mode: batched`, `batch_size: 8`, `beam_size: 1`, VAD attivo e `word_timestamps: false`. Il comando equivalente è:
+
+```powershell
+videodoc transcribe <progetto> --device cuda --mode batched --compute-type int8_float16 --batch-size 8 --beam-size 1 --workers 1 --no-word-timestamps
+```
+
+Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslate2 lavora su GPU; il dato più importante è `utilization.gpu`. Se la VRAM va in errore, prova `--batch-size 4`. Se vuoi una prova rapida sacrificando qualità, modifica temporaneamente `transcription.model` in `config.yaml` con un modello più piccolo (es. `medium`, `small`, `base`).
 
 ## 9. Cosa non è ancora disponibile
 

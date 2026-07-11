@@ -159,13 +159,20 @@ class TranscriptionSection(BaseModel):
     engine: str = "faster-whisper"
     model: str = "large-v3"
     language: str = "it"
-    word_timestamps: bool = True
+    word_timestamps: bool = False
     device: Literal["auto", "cpu", "cuda"] = "auto"
     compute_type: str = "auto"
+    mode: Literal["auto", "standard", "batched"] = "auto"
     workers: int | Literal["auto"] = "auto"
     cpu_threads: int | Literal["auto"] = "auto"
+    batch_size: int | Literal["auto"] = "auto"
+    beam_size: int = Field(1, gt=0)
+    best_of: int = Field(1, gt=0)
+    vad_filter: bool = True
+    chunk_length_seconds: int = Field(30, gt=0)
+    condition_on_previous_text: bool = False
 
-    @field_validator("workers", "cpu_threads")
+    @field_validator("workers", "cpu_threads", "batch_size")
     @classmethod
     def _positive_or_auto(cls, v: int | Literal["auto"], info: ValidationInfo) -> int | Literal["auto"]:
         if v == "auto":

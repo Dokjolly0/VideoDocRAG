@@ -28,17 +28,38 @@ def test_resolve_device(monkeypatch, configured, override, usable, expected):
     assert hardware.resolve_device(configured, override) == expected
 
 
-def test_compute_type_auto_depends_on_device():
-    assert hardware.resolve_compute_type("auto", "cuda") == "float16"
+def test_compute_type_auto_depends_on_device_and_override():
+    assert hardware.resolve_compute_type("auto", "cuda") == "int8_float16"
     assert hardware.resolve_compute_type("auto", "cpu") == "int8"
-    assert hardware.resolve_compute_type("int8_float16", "cuda") == "int8_float16"
+    assert hardware.resolve_compute_type("float16", "cuda") == "float16"
+    assert hardware.resolve_compute_type("auto", "cuda", "float16") == "float16"
+
+
+@pytest.mark.parametrize("configured,override,device,expected", [
+    ("auto", None, "cuda", "batched"),
+    ("auto", None, "cpu", "standard"),
+    ("standard", None, "cuda", "standard"),
+    ("batched", None, "cpu", "batched"),
+    ("standard", "batched", "cuda", "batched"),
+])
+def test_resolve_transcription_mode(configured, override, device, expected):
+    assert hardware.resolve_transcription_mode(configured, override, device=device) == expected
 
 
 def test_transcription_workers_cpu_vs_gpu_defaults(monkeypatch):
     monkeypatch.setattr(hardware.os, "cpu_count", lambda: 16)
     assert hardware.resolve_transcription_workers("auto", None, device="cpu") == 16
-    assert hardware.resolve_transcription_workers("auto", None, device="cuda") == hardware.DEFAULT_GPU_WORKERS
-    assert hardware.resolve_transcription_workers("auto", 5, device="cuda") == 5
+    assert hardware.resolve_transcription_workers("auto", None, device="cuda", mode="standard") == hardware.DEFAULT_GPU_WORKERS
+    assert hardware.resolve_transcription_workers("auto", None, device="cuda", mode="batched") == hardware.DEFAULT_BATCHED_GPU_WORKERS
+    assert hardware.resolve_transcription_workers("auto", 5, device="cuda", mode="batched") == 5
+
+
+def test_transcription_batch_size_defaults_and_overrides():
+    assert hardware.resolve_transcription_batch_size("auto", None, device="cuda", mode="batched") == hardware.DEFAULT_GPU_BATCH_SIZE
+    assert hardware.resolve_transcription_batch_size("auto", None, device="cpu", mode="batched") == 1
+    assert hardware.resolve_transcription_batch_size(4, None, device="cuda", mode="batched") == 4
+    assert hardware.resolve_transcription_batch_size("auto", 2, device="cuda", mode="batched") == 2
+    assert hardware.resolve_transcription_batch_size("auto", 2, device="cuda", mode="standard") is None
 
 
 def test_cpu_threads_auto_avoids_oversubscription(monkeypatch):
