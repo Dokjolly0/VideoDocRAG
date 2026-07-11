@@ -39,10 +39,13 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
 );
 """
 
-# README §31/§30.3 -- ocr_text/ocr_confidence/contains_code stay NULL/0 until
-# the later OCR (§19) and code-detection (§20) phases fill them in; the frame
-# extraction phase (this table's only writer for now) only ever populates
-# id/video_id/timestamp_seconds/image_path/perceptual_hash.
+# README §31/§30.3 -- ocr_text/ocr_confidence are filled in by OCRService
+# (README §19, via update_frame_ocr -- a partial UPDATE, not replace_frames)
+# once 'videodoc ocr' runs; contains_code stays 0 until the not-yet-
+# implemented code-detection phase (§20) fills it in. FrameExtractionService
+# (this table's INSERT writer, via replace_frames) only ever populates
+# id/video_id/timestamp_seconds/image_path/perceptual_hash, leaving the rest
+# at their column defaults.
 _CREATE_FRAMES_TABLE = """
 CREATE TABLE IF NOT EXISTS frames (
     id TEXT PRIMARY KEY,
@@ -90,9 +93,16 @@ class FrameRow:
     timestamp_seconds: float
     image_path: str  # project-relative posix, e.g. "workdir/<id>/frames/frame_0001.jpg"
     perceptual_hash: str | None
-    ocr_text: str | None = None  # filled by a later phase (README §19)
-    ocr_confidence: float | None = None  # filled by a later phase (README §19)
+    ocr_text: str | None = None  # filled by the OCR phase (README §19)
+    ocr_confidence: float | None = None  # filled by the OCR phase (README §19)
     contains_code: bool = False  # filled by a later phase (README §20)
+
+
+@dataclass(frozen=True)
+class FrameOcrUpdate:
+    frame_id: str
+    ocr_text: str | None
+    ocr_confidence: float | None
 
 
 def ensure_schema(db_path: Path) -> None:
@@ -262,3 +272,52 @@ def replace_frames(db_path: Path, video_id: str, frames: list[FrameRow]) -> None
             )
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot write frames for video '{video_id}' to {db_path}: {exc}") from exc
+
+
+def list_frames(db_path: Path, video_id: str) -> list[FrameRow]:
+    """All frame rows for a single video, ordered by id (i.e. chronologically,
+    since ids are zero-padded sequential frame_NNNN). Returns an empty list --
+    never raises -- if the table doesn't exist yet, same graceful-empty
+    contract as list_transcript_segments: OCRService treats "no frames row
+    for this video yet" as "run 'videodoc frames' first" (a no-op skip, not
+    a structural database problem it needs to handle specially itself)."""
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            table_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='frames'"
+            ).fetchone()
+            if table_exists is None:
+                return []
+            rows = conn.execute(
+                "SELECT id, video_id, timestamp_seconds, image_path, perceptual_hash, "
+                "ocr_text, ocr_confidence, contains_code FROM frames WHERE video_id = ? ORDER BY id",
+                (video_id,),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot list frames for video '{video_id}' in {db_path}: {exc}") from exc
+    return [FrameRow(*row[:7], contains_code=bool(row[7])) for row in rows]
+
+
+def update_frame_ocr(db_path: Path, video_id: str, updates: list[FrameOcrUpdate]) -> None:
+    """Per-row UPDATE of ONLY ocr_text/ocr_confidence for the given frame ids,
+    in one transaction -- deliberately NOT replace_frames, which would
+    require reconstructing perceptual_hash/contains_code for every row just
+    to avoid clobbering them, and could wipe a contains_code already set by a
+    future §20 code-detection run that hasn't re-run yet. video_id is used in
+    the WHERE clause defensively (frame ids are already globally unique
+    across the whole project.db, mirroring FrameRow.id's own comment)."""
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.executemany(
+                "UPDATE frames SET ocr_text = :ocr_text, ocr_confidence = :ocr_confidence "
+                "WHERE id = :id AND video_id = :video_id",
+                [
+                    {
+                        "id": u.frame_id, "video_id": video_id,
+                        "ocr_text": u.ocr_text, "ocr_confidence": u.ocr_confidence,
+                    }
+                    for u in updates
+                ],
+            )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot update OCR results for video '{video_id}' in {db_path}: {exc}") from exc

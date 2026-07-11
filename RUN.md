@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`; Step 4: estrazione audio — `extract-audio`; Step 5: trascrizione audio — `transcribe`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (OCR, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`; Step 4: estrazione audio — `extract-audio`; Step 5: trascrizione audio — `transcribe`; Step 6: estrazione frame — `frames`; Step 7: OCR degli screenshot — `ocr`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (riconoscimento del codice, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -446,7 +446,43 @@ Project: corso-software-x
 
 Se nessun video è ancora stato registrato (`ingest` non è mai stato eseguito), se `ffmpeg` non è disponibile in `PATH` quando serve, o se il pacchetto `scenedetect` non è installato quando serve con la scene detection attiva (default), il comando fallisce subito (`exit code` 1) senza creare o modificare nulla. Un problema di estrazione o di scene detection su un singolo video, o un'estrazione che non produce nemmeno un frame utilizzabile, non blocca gli altri video: viene segnalato con un `Warning`, il comando resta a `exit code` 0. La scene detection e il keyword boost si disattivano con `--no-scene-detection`/`--no-keyword-boost`; l'assenza di una trascrizione per un video non è un errore, contribuisce semplicemente zero frame extra da parole chiave.
 
-### 5.11 Verificare lo stato dell'ambiente (`doctor`)
+### 5.11 Eseguire l'OCR sugli screenshot di un progetto
+
+Per ogni video con frame già estratti (`videodoc frames`), esegue l'OCR (motore RapidOCR) su ogni immagine frame e registra testo/confidenza in `workdir/<id>/ocr/<id>.json` e nelle colonne `ocr_text`/`ocr_confidence` della tabella `frames` di `project.db`, aggiornando `metadata.json`:
+
+```bash
+videodoc ocr corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Processed | 8 |
+| Skipped   | 0 |
++---------------+
+```
+
+Non modifica mai `contains_code`/`perceptual_hash`: `contains_code` resta riservato alla fase di riconoscimento del codice (README §20), non ancora implementata.
+
+È idempotente per **due** condizioni indipendenti: le impostazioni effettive salvate in `ocr.json` (motore, lingue, soglia di confidenza) devono coincidere con quelle correnti, **e** l'insieme di frame-id correnti (dalla tabella `frames`) deve coincidere con quello registrato nel manifest. Questa seconda condizione è specifica di questa fase: se `videodoc frames` viene rieseguito producendo un insieme di frame diverso (es. un `--interval-seconds` più stretto), il video viene sottoposto di nuovo a OCR anche se nessuna impostazione OCR è cambiata:
+
+```bash
+videodoc ocr corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Processed | 0 |
+| Skipped   | 8 |
++---------------+
+```
+
+Un video con frame di cui non è mai stato eseguito `videodoc frames` (o che ne ha prodotti zero) viene saltato silenziosamente, senza errore. Un testo riconosciuto con confidenza sotto `ocr.min_confidence` (default 0.65) viene comunque registrato con testo vuoto e la confidenza reale conservata, per distinguere "OCR eseguito ma rumore a bassa confidenza" da "OCR mai eseguito su questo frame" (quest'ultimo resta `NULL`, e viene ritentato automaticamente al run successivo).
+
+`rapidocr`/`onnxruntime` sono installati automaticamente come dipendenze del progetto (nessun passo manuale, a differenza di FFmpeg) e vengono richiesti solo se **almeno un video** necessita davvero di un nuovo OCR: un progetto già completamente processato può essere rilanciato per autoripararsi anche su una macchina priva di `rapidocr`. Se nessun video è ancora stato registrato, o se il pacchetto `rapidocr` non è installato quando serve, il comando fallisce subito (`exit code` 1). Un fallimento OCR su un singolo frame non blocca gli altri: viene segnalato con un `Warning`, quel frame viene ritentato al run successivo.
+
+### 5.12 Verificare lo stato dell'ambiente (`doctor`)
 
 Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
 
@@ -468,7 +504,7 @@ Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode —
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
-### 5.12 Applicare le correzioni automaticamente (`setup`)
+### 5.13 Applicare le correzioni automaticamente (`setup`)
 
 Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
 
@@ -654,10 +690,10 @@ Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslat
 
 ## 9. Cosa non è ancora disponibile
 
-Questi cinque step coprono la gestione dei progetti, la scansione delle fonti, l'ingestion dei video, l'estrazione audio e la trascrizione. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi step coprono la gestione dei progetti, la scansione delle fonti, l'ingestion dei video, l'estrazione audio, la trascrizione, l'estrazione frame e l'OCR. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
 - `videodoc sync-codebase` — sincronizzazione e indicizzazione della codebase;
-- `videodoc frames`, `ocr`, `code` — estrazione frame, OCR, riconoscimento codice;
+- `videodoc code` — riconoscimento ed estrazione del codice;
 - `videodoc chunk`, `index` — chunking ed embedding/indicizzazione vettoriale;
 - `videodoc outline`, `generate`, `review`, `export` — generazione e revisione della documentazione;
 - `videodoc ask`, `chat` — interrogazione RAG e chat sulla knowledge base;

@@ -1242,7 +1242,7 @@ transcription:
   vad_filter: true
 
 ocr:
-  engine: "paddleocr"
+  engine: "rapidocr"
   frame_interval_seconds: 8
   detect_scene_changes: true
 
@@ -1539,6 +1539,8 @@ Output consigliato:
 ```
 
 È importante conservare anche la confidenza dell’OCR.
+
+Nota implementativa: il motore usato è **RapidOCR** (pacchetto `rapidocr` + `onnxruntime`), non PaddleOCR — scartato perché il suo wheel `paddlepaddle` è notoriamente ostico da installare su Windows (variant CPU/GPU/CUDA separate), mentre RapidOCR è pip-only, senza binario di sistema, coerente con il principio di funzionamento locale (§4.5). `config.ocr.engine` di default è quindi `"rapidocr"`, non `"paddleocr"` come negli esempi di configurazione sopra prima di questa nota. Il formato realmente prodotto salva un frame alla volta in `workdir/<video_id>/ocr/<video_id>.json` (non un singolo blocco per frame come nell'esempio sopra, ma un elenco `entries` con `frame_id`/`ocr_text`/`confidence`) e replica `ocr_text`/`ocr_confidence` nelle colonne omonime della tabella `frames` di `project.db` (§31) — senza mai toccare `contains_code`, riservata alla fase successiva (§20). Un frame con confidenza sotto `ocr.min_confidence` (default 0.65) viene comunque registrato (testo vuoto, confidenza reale conservata), per distinguere "OCR eseguito ma rumore" da "OCR mai eseguito su questo frame". `ocr.languages` è al momento solo informativo (registrato per l'idempotenza): il modello di riconoscimento di default di RapidOCR, nominalmente "cinese+inglese", è stato verificato riconoscere correttamente anche l'italiano su testo a schermo di qualità realistica, quindi non è stata introdotta la selezione di un modello per-lingua (più fragile e con un download aggiuntivo al primo uso). Vedi `docs/features/ocr.md`.
 
 ---
 
@@ -2459,16 +2461,19 @@ transcription:
   chunk_length_seconds: 30
   condition_on_previous_text: false
 
-frames:  interval_seconds: 8
+frames:
+  interval_seconds: 8
   scene_detection: true
   keyword_boost: true
+  workers: "auto"
 
 ocr:
-  engine: "paddleocr"
+  engine: "rapidocr"
   languages:
     - "it"
     - "en"
   min_confidence: 0.65
+  workers: "auto"
 
 chunking:
   min_duration_seconds: 90

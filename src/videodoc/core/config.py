@@ -201,9 +201,19 @@ class FramesSection(BaseModel):
 
 class OCRSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    engine: str = "paddleocr"
+    engine: str = "rapidocr"  # was "paddleocr" -- see README §19 Nota implementativa
     languages: list[str] = Field(default_factory=lambda: ["it", "en"])
     min_confidence: float = Field(0.65, ge=0.0, le=1.0)
+    workers: int | Literal["auto"] = "auto"
+
+    @field_validator("workers")
+    @classmethod
+    def _workers_positive_or_auto(cls, v: int | Literal["auto"]) -> int | Literal["auto"]:
+        if v == "auto":
+            return v
+        if v <= 0:
+            raise ValueError("workers must be 'auto' or a positive integer")
+        return v
 
 
 class ChunkingSection(BaseModel):

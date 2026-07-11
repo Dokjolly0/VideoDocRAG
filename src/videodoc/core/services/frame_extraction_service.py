@@ -21,6 +21,7 @@ from videodoc.core.storage.database import (
     FrameRow,
     VideoRow,
     ensure_schema,
+    list_frames,
     list_transcript_segments,
     list_videos,
     replace_frames,
@@ -211,10 +212,27 @@ class FrameExtractionService:
         # always rewritten from the on-disk manifest (cheap DELETE+INSERT),
         # so a prior transient DB failure self-heals instead of staying
         # silently empty forever. Mirrors TranscriptionService exactly.
+        #
+        # frames.json itself never carries ocr_text/ocr_confidence/
+        # contains_code (those are OCRService's/a future §20 phase's own
+        # data, not this phase's), so rebuilding rows from the manifest
+        # alone would silently wipe any OCR/code annotations a later phase
+        # already wrote for these exact same frame ids -- a plain "rerun
+        # videodoc frames" must be a pure DB-repair no-op for that data, not
+        # a destructive one. The current DB values for those three columns
+        # are read first and carried over for any frame id that already had
+        # them; a brand-new frame id (never OCR'd/classified) still starts
+        # at their normal None/None/False defaults.
         assert plan.manifest is not None
         row = plan.row
         try:
-            replace_frames(db_path, row.id, _manifest_to_rows(row.id, plan.manifest))
+            existing_annotations = {
+                f.id: (f.ocr_text, f.ocr_confidence, f.contains_code) for f in list_frames(db_path, row.id)
+            }
+        except DatabaseError as exc:
+            return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: frames already exist but database could not be read: {exc}",))
+        try:
+            replace_frames(db_path, row.id, _manifest_to_rows(row.id, plan.manifest, existing_annotations))
         except DatabaseError as exc:
             return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: frames already exist but database could not be updated: {exc}",))
 
@@ -383,11 +401,20 @@ class FrameExtractionService:
         return True
 
 
-def _manifest_to_rows(video_id: str, manifest: FrameManifest) -> list[FrameRow]:
-    return [
-        FrameRow(
-            id=entry.id, video_id=video_id, timestamp_seconds=entry.timestamp_seconds,
-            image_path=entry.image_path, perceptual_hash=entry.perceptual_hash,
+def _manifest_to_rows(
+    video_id: str,
+    manifest: FrameManifest,
+    existing_annotations: dict[str, tuple[str | None, float | None, bool]] | None = None,
+) -> list[FrameRow]:
+    existing_annotations = existing_annotations or {}
+    rows = []
+    for entry in manifest.frames:
+        ocr_text, ocr_confidence, contains_code = existing_annotations.get(entry.id, (None, None, False))
+        rows.append(
+            FrameRow(
+                id=entry.id, video_id=video_id, timestamp_seconds=entry.timestamp_seconds,
+                image_path=entry.image_path, perceptual_hash=entry.perceptual_hash,
+                ocr_text=ocr_text, ocr_confidence=ocr_confidence, contains_code=contains_code,
+            )
         )
-        for entry in manifest.frames
-    ]
+    return rows

@@ -44,13 +44,15 @@ frames:
   interval_seconds: 8
   scene_detection: true
   keyword_boost: true
+  workers: "auto"
 
 ocr:
-  engine: "paddleocr"
+  engine: "rapidocr"
   languages:
     - "it"
     - "en"
   min_confidence: 0.65
+  workers: "auto"
 
 chunking:
   min_duration_seconds: 90
@@ -307,6 +309,15 @@ def test_source_paths_accept_parent_traversal_inside_true_absolute(tmp_path, fie
     config = ProjectConfig.load(path)
     assert getattr(config.paths, field) == "D:\\Corsi\\..\\OtherCorsi\\Workshop"
 
+def test_ocr_defaults():
+    config = ProjectConfig.default(name="Demo", slug="demo")
+    assert config.ocr.engine == "rapidocr"
+    assert config.ocr.languages == ["it", "en"]
+    assert config.ocr.min_confidence == 0.65
+    assert config.ocr.workers == "auto"
+    assert config.frames.workers == "auto"
+
+
 def test_concurrency_and_transcription_runtime_defaults_roundtrip():
     config = ProjectConfig.default(name="Demo", slug="demo")
     assert config.ingest.workers == "auto"
@@ -372,6 +383,8 @@ def test_concurrency_and_transcription_runtime_fields_accept_positive_ints(tmp_p
     ("transcription", "workers"),
     ("transcription", "cpu_threads"),
     ("transcription", "batch_size"),
+    ("frames", "workers"),
+    ("ocr", "workers"),
 ])
 def test_concurrency_fields_reject_non_positive_ints(tmp_path, section, field):
     path = tmp_path / "config.yaml"

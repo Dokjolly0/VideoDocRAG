@@ -1,4 +1,6 @@
+import contextlib
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -16,10 +18,13 @@ from videodoc.core.models.frame_manifest import FrameManifest
 from videodoc.core.models.video_metadata import VideoMetadata
 from videodoc.core.services.frame_extraction_service import FrameExtractionService
 from videodoc.core.storage.database import (
+    FrameOcrUpdate,
     TranscriptSegmentRow,
     VideoRow,
     ensure_schema,
+    list_frames,
     replace_transcript_segments,
+    update_frame_ocr,
     upsert_video,
 )
 from videodoc.core.storage.filesystem import ensure_video_workdir
@@ -239,6 +244,38 @@ def test_skip_when_manifest_exists_self_heals_db(tmp_path, monkeypatch):
     assert result.skipped == ("demo",)
     assert result.extracted == ()
     assert call_count["n"] == 1  # extract_frames never called again
+
+
+def test_skip_when_manifest_exists_preserves_ocr_and_code_columns(tmp_path, monkeypatch):
+    """Regression test: a plain idempotent 'videodoc frames' rerun (settings
+    unchanged, self-heal path only) must never wipe ocr_text/ocr_confidence/
+    contains_code -- those belong to OCRService (README §19) and a future
+    §20 code-detection phase, not to this one, and frames.json itself never
+    carries them at all. Rebuilding DB rows from the manifest alone would
+    otherwise silently clobber annotations a later phase already wrote for
+    these exact same frame ids."""
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _, video_dir = _seed_video(project_dir, config)
+    _available_ffmpeg(monkeypatch)
+    _stub_extract_frames(monkeypatch)
+
+    _no_boost_service(project_dir, config).run()
+
+    db_path = project_dir / config.paths.database
+    frame_id = list_frames(db_path, "demo")[0].id
+    update_frame_ocr(db_path, "demo", [FrameOcrUpdate(frame_id=frame_id, ocr_text="npm install", ocr_confidence=0.95)])
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("UPDATE frames SET contains_code = 1 WHERE id = ?", (frame_id,))
+
+    result = _no_boost_service(project_dir, config).run()
+    assert result.skipped == ("demo",)
+
+    refreshed = {f.id: f for f in list_frames(db_path, "demo")}
+    assert refreshed[frame_id].ocr_text == "npm install"
+    assert refreshed[frame_id].ocr_confidence == 0.95
+    assert refreshed[frame_id].contains_code is True
 
 
 def test_one_bad_video_does_not_block_others(tmp_path, monkeypatch):

@@ -8,6 +8,7 @@ from videodoc.cli.commands import (
     init,
     link,
     list_projects,
+    ocr,
     path as path_cmd,
     scan,
     setup,
@@ -26,6 +27,7 @@ app.command("ingest")(ingest.ingest_command)
 app.command("extract-audio")(extract_audio.extract_audio_command)
 app.command("transcribe")(transcribe.transcribe_command)
 app.command("frames")(frames.frames_command)
+app.command("ocr")(ocr.ocr_command)
 app.command("doctor")(doctor.doctor_command)
 app.command("setup")(setup.setup_command)
 

@@ -6,15 +6,18 @@ import pytest
 
 from videodoc.core.errors import DatabaseError
 from videodoc.core.storage.database import (
+    FrameOcrUpdate,
     FrameRow,
     TranscriptSegmentRow,
     VideoRow,
     ensure_schema,
     get_video,
+    list_frames,
     list_transcript_segments,
     list_videos,
     replace_frames,
     replace_transcript_segments,
+    update_frame_ocr,
     upsert_video,
 )
 
@@ -287,3 +290,50 @@ def test_replace_frames_wraps_sqlite_error(tmp_path):
     db_path.mkdir()
     with pytest.raises(DatabaseError):
         replace_frames(db_path, "demo", [_frame()])
+
+
+def test_list_frames_returns_empty_when_table_missing(tmp_path):
+    db_path = tmp_path / "project.db"
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("SELECT 1")  # create the file without ever calling ensure_schema
+    assert list_frames(db_path, "demo") == []
+
+
+def test_list_frames_orders_by_id(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_frames(db_path, "demo", [
+        _frame(id="demo_frame_0002", timestamp_seconds=16.0),
+        _frame(id="demo_frame_0001", timestamp_seconds=8.0),
+    ])
+
+    rows = list_frames(db_path, "demo")
+    assert [r.id for r in rows] == ["demo_frame_0001", "demo_frame_0002"]
+
+
+def test_update_frame_ocr_updates_only_ocr_columns(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_frames(db_path, "demo", [_frame(perceptual_hash="original-hash")])
+    # Seed contains_code=True directly, since replace_frames' own FrameRow
+    # default is False -- simulates a future §20 code-detection run having
+    # already set it, which update_frame_ocr must never clobber.
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("UPDATE frames SET contains_code = 1 WHERE id = ?", ("demo_frame_0000",))
+
+    update_frame_ocr(db_path, "demo", [FrameOcrUpdate(frame_id="demo_frame_0000", ocr_text="hello world", ocr_confidence=0.91)])
+
+    rows = _fetch_frames(db_path, "demo")
+    assert rows[0][4] == "original-hash"  # perceptual_hash untouched
+    assert rows[0][5] == "hello world"  # ocr_text updated
+    assert rows[0][6] == 0.91  # ocr_confidence updated
+    assert rows[0][7] == 1  # contains_code untouched
+
+
+def test_update_frame_ocr_wraps_sqlite_error(tmp_path):
+    db_path = tmp_path / "not-a-file"
+    db_path.mkdir()
+    with pytest.raises(DatabaseError):
+        update_frame_ocr(db_path, "demo", [FrameOcrUpdate(frame_id="demo_frame_0000", ocr_text="x", ocr_confidence=0.5)])
