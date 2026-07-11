@@ -361,3 +361,137 @@ def test_hash_dedup_drops_near_duplicate_boosted_frame(tmp_path, monkeypatch):
     # Without dedup this would be 4 (0, 8, 11.0, 16); the near-duplicate
     # keyword frame at 11.0 must have been dropped.
     assert [f.timestamp_seconds for f in manifest.frames] == [0.0, 8.0, 16.0]
+
+
+def test_missing_ffmpeg_does_not_raise_when_every_video_is_already_self_healable(tmp_path, monkeypatch):
+    """Regression test: a fully processed project must be able to re-run
+    'videodoc frames' to self-heal DB/metadata even on a machine that no
+    longer has ffmpeg installed, as long as every video's frames.json
+    already matches the current run's settings -- ffmpeg must only be
+    required when at least one video actually needs fresh extraction."""
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    _stub_extract_frames(monkeypatch)
+
+    service = _no_boost_service(project_dir, config, interval_seconds_override=8)
+    first = service.run()
+    assert first.extracted == ("demo",)
+
+    monkeypatch.setattr(frame_extraction_service_module.shutil, "which", lambda name: None)  # ffmpeg now "missing"
+    second = _no_boost_service(project_dir, config, interval_seconds_override=8).run()
+    assert second.skipped == ("demo",)
+    assert second.errors == ()
+
+
+def test_scene_detection_unavailable_does_not_raise_when_every_video_is_already_self_healable(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    _stub_extract_frames(monkeypatch)
+    monkeypatch.setattr(frame_extraction_service_module, "detect_scene_timestamps", lambda video_path: [])
+
+    first = FrameExtractionService(project_dir, config, keyword_boost_override=False, interval_seconds_override=8).run()
+    assert first.extracted == ("demo",)
+
+    monkeypatch.setattr(frame_extraction_service_module, "scenedetect_available", lambda: False)
+    second = FrameExtractionService(project_dir, config, keyword_boost_override=False, interval_seconds_override=8).run()
+    assert second.skipped == ("demo",)
+    assert second.errors == ()
+
+
+def test_rerun_with_different_interval_reextracts_instead_of_silently_skipping(tmp_path, monkeypatch):
+    """Regression test: a frames.json produced under one set of settings
+    must not be silently treated as 'done' when the user asks for
+    different settings on a rerun -- the previous behavior (skip whenever
+    frames.json merely exists) would make --interval-seconds/
+    --no-scene-detection/--no-keyword-boost on a rerun a silent no-op."""
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _, video_dir = _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+    _stub_extract_frames(monkeypatch)
+
+    first = _no_boost_service(project_dir, config, interval_seconds_override=5).run()
+    assert first.extracted == ("demo",)
+    first_manifest = FrameManifest.load(video_dir / "frames" / "frames.json")
+    assert [f.timestamp_seconds for f in first_manifest.frames] == [0.0, 5.0, 10.0, 15.0]
+    assert sorted(p.name for p in (video_dir / "frames").glob("frame_*.jpg")) == [
+        "frame_0001.jpg", "frame_0002.jpg", "frame_0003.jpg", "frame_0004.jpg",
+    ]
+
+    second = _no_boost_service(project_dir, config, interval_seconds_override=8).run()
+
+    assert second.extracted == ("demo",)  # re-extracted, not silently skipped
+    assert second.skipped == ()
+    second_manifest = FrameManifest.load(video_dir / "frames" / "frames.json")
+    assert [f.timestamp_seconds for f in second_manifest.frames] == [0.0, 8.0, 16.0]
+    assert second_manifest.interval_seconds == 8
+    # The 4th frame from the first (denser) run must be cleaned up, not left
+    # as an orphaned file no longer referenced by the new manifest.
+    assert sorted(p.name for p in (video_dir / "frames").glob("frame_*.jpg")) == [
+        "frame_0001.jpg", "frame_0002.jpg", "frame_0003.jpg",
+    ]
+
+
+def test_rerun_with_same_settings_still_skips(tmp_path, monkeypatch):
+    """Companion to the mismatch test above: identical settings on a rerun
+    must still take the cheap self-heal skip path, not re-extract."""
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+
+    call_count = {"n": 0}
+
+    def counting_stub(video_path, output_dir, timestamps, **kwargs):
+        call_count["n"] += 1
+        result = []
+        for i, t in enumerate(sorted(timestamps), start=1):
+            path = output_dir / f"frame_{i:05d}.jpg"
+            _write_pattern_jpeg(path, 0)
+            result.append((t, path))
+        return result
+
+    monkeypatch.setattr(frame_extraction_service_module, "extract_frames", counting_stub)
+
+    _no_boost_service(project_dir, config, interval_seconds_override=8).run()
+    assert call_count["n"] == 1
+
+    result = _no_boost_service(project_dir, config, interval_seconds_override=8).run()
+    assert result.skipped == ("demo",)
+    assert result.extracted == ()
+    assert call_count["n"] == 1  # extract_frames never called again
+
+
+def test_zero_frames_surviving_extraction_is_reported_as_error(tmp_path, monkeypatch):
+    """Regression test: ffmpeg can succeed (matching frame/pts counts) while
+    still producing zero usable frames after matching+dedup (e.g. every
+    requested window fell outside what ffmpeg could actually decode).
+    Silently writing an empty frames.json would report 'Extracted' for a
+    video with no usable frames at all -- this must surface as an error."""
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _, video_dir = _seed_video(project_dir, config, duration_seconds=20.0)
+    _available_ffmpeg(monkeypatch)
+
+    def empty_extract(video_path, output_dir, timestamps, **kwargs):
+        return []  # ffmpeg "succeeded" but nothing was actually extracted
+
+    monkeypatch.setattr(frame_extraction_service_module, "extract_frames", empty_extract)
+
+    result = _no_boost_service(project_dir, config, interval_seconds_override=8).run()
+
+    assert result.extracted == ()
+    assert result.skipped == ()
+    assert len(result.errors) == 1
+    assert "demo" in result.errors[0]
+    assert "0 usable frame" in result.errors[0]
+    assert not (video_dir / "frames" / "frames.json").exists()

@@ -46,7 +46,12 @@ def average_hash(image_path: Path, *, hash_size: int = 8) -> str:
     could ever fix)."""
     with Image.open(image_path) as img:
         thumbnail = img.convert("L").resize((hash_size, hash_size), Image.Resampling.LANCZOS)
-        pixels = list(thumbnail.getdata())
+        # tobytes() (one byte per pixel for "L" mode, same row-major order as
+        # getdata()) rather than getdata(): stable across every Pillow
+        # version back to old PIL, unlike the newer get_flattened_data()
+        # that getdata() is being deprecated in favor of, which may not
+        # exist on the project's minimum pinned Pillow>=10.0.
+        pixels = thumbnail.tobytes()
 
     mean = sum(pixels) / len(pixels)
     spatial_bits = "".join("1" if p >= mean else "0" for p in pixels)

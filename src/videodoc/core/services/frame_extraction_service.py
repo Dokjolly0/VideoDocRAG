@@ -54,6 +54,23 @@ class _FrameExtractionOutcome:
     errors: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class _VideoPlan:
+    """What _process_plan needs to do for one video, decided up front (in
+    run(), sequentially, before any ffmpeg/scenedetect availability check or
+    thread-pool work) purely from cheap local state: does frames.json exist,
+    does it parse, and do its stored settings match this run's. Mirrors
+    TranscriptionService's own existing/fresh pre-scan pattern."""
+    row: VideoRow
+    video_dir: Path
+    frames_dir: Path
+    frames_rel: Path
+    manifest_path: Path
+    needs_fresh: bool
+    manifest: FrameManifest | None = None  # a successfully loaded existing manifest, whether or not its settings still match
+    load_error: str | None = None  # set instead of manifest when frames.json exists but fails to parse
+
+
 class FrameExtractionService:
     def __init__(
         self,
@@ -88,22 +105,36 @@ class FrameExtractionService:
                 f"No videos registered in {db_path.name} -- run 'videodoc ingest' first."
             )
 
-        if shutil.which("ffmpeg") is None:
-            raise ExternalToolNotFoundError(
-                "ffmpeg was not found on PATH. Install FFmpeg and make sure ffmpeg is available "
-                "before running 'videodoc frames' -- see RUN.md."
-            )
-
-        if self.scene_detection and not scenedetect_available():
-            raise SceneDetectionUnavailableError(
-                "config.frames.scene_detection is enabled but the 'scenedetect' package is not "
-                "installed -- run 'pip install scenedetect' or pass --no-scene-detection."
-            )
-
         # A project.db created before the frames table existed only has
         # videos/transcript_segments -- ensure_schema is idempotent and must
-        # be (re-)run here, same reasoning as TranscriptionService.
+        # be (re-)run here, same reasoning as TranscriptionService. Cheap,
+        # no external tool involved, so it runs unconditionally.
         ensure_schema(db_path)
+
+        ordered_videos = sorted(videos, key=lambda r: r.id)
+        total = len(ordered_videos)
+
+        # Classify every video up front -- cheap local I/O only (does
+        # frames.json exist, does it parse, do its settings match this
+        # run's) -- before ever requiring ffmpeg/scenedetect. A fully
+        # processed project must be able to re-run 'videodoc frames' to
+        # self-heal DB/metadata even on a machine that no longer has
+        # ffmpeg/PySceneDetect installed, as long as nothing actually needs
+        # fresh extraction.
+        plans = [self._plan_for(row) for row in ordered_videos]
+        needs_fresh = any(plan.needs_fresh for plan in plans)
+
+        if needs_fresh:
+            if shutil.which("ffmpeg") is None:
+                raise ExternalToolNotFoundError(
+                    "ffmpeg was not found on PATH. Install FFmpeg and make sure ffmpeg is available "
+                    "before running 'videodoc frames' -- see RUN.md."
+                )
+            if self.scene_detection and not scenedetect_available():
+                raise SceneDetectionUnavailableError(
+                    "config.frames.scene_detection is enabled but the 'scenedetect' package is not "
+                    "installed -- run 'pip install scenedetect' or pass --no-scene-detection."
+                )
 
         configured_workers = resolve_cpu_workers(self.config.frames.workers, self.workers_override)
         executor_workers = resolve_executor_workers(configured_workers, len(videos))
@@ -113,12 +144,10 @@ class FrameExtractionService:
         skipped: list[str] = []
         errors: list[str] = []
 
-        ordered_videos = sorted(videos, key=lambda r: r.id)
-        total = len(ordered_videos)
         with ThreadPoolExecutor(max_workers=executor_workers) as executor:
             futures = [
-                executor.submit(self._process_video, row, index, total, progress, db_path, ffmpeg_threads)
-                for index, row in enumerate(ordered_videos)
+                executor.submit(self._process_plan, plan, index, total, progress, db_path, ffmpeg_threads)
+                for index, plan in enumerate(plans)
             ]
             for future in futures:
                 outcome = future.result()
@@ -130,67 +159,79 @@ class FrameExtractionService:
 
         return FrameExtractionResult(tuple(extracted), tuple(skipped), tuple(errors))
 
-    def _process_video(
+    def _plan_for(self, row: VideoRow) -> _VideoPlan:
+        video_dir = self.project_dir / self.config.paths.workdir / row.id
+        filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
+        frames_dir = video_dir / "frames"
+        frames_rel = Path(self.config.paths.workdir) / row.id / "frames"
+        manifest_path = frames_dir / "frames.json"
+
+        if not manifest_path.is_file():
+            return _VideoPlan(row, video_dir, frames_dir, frames_rel, manifest_path, needs_fresh=True)
+
+        try:
+            manifest = FrameManifest.load(manifest_path)
+        except InvalidFrameManifestError as exc:
+            return _VideoPlan(row, video_dir, frames_dir, frames_rel, manifest_path, needs_fresh=False, load_error=str(exc))
+
+        settings_match = (
+            manifest.interval_seconds == self.interval_seconds
+            and manifest.scene_detection == self.scene_detection
+            and manifest.keyword_boost == self.keyword_boost
+        )
+        return _VideoPlan(
+            row, video_dir, frames_dir, frames_rel, manifest_path,
+            needs_fresh=not settings_match, manifest=manifest,
+        )
+
+    def _process_plan(
         self,
-        row: VideoRow,
+        plan: _VideoPlan,
         index: int,
         total: int,
         progress: ProgressReporter,
         db_path: Path,
         ffmpeg_threads: int,
     ) -> _FrameExtractionOutcome:
-        progress.start_item(row.id, index, total)
+        progress.start_item(plan.row.id, index, total)
         try:
-            video_dir = self.project_dir / self.config.paths.workdir / row.id
-            filesystem.ensure_video_workdir(video_dir)  # defensive: workdir may have been deleted manually
-            frames_dir = video_dir / "frames"
-            frames_rel = Path(self.config.paths.workdir) / row.id / "frames"
-            manifest_path = frames_dir / "frames.json"
-
-            if manifest_path.is_file():
-                return self._process_existing(row, video_dir, manifest_path, frames_rel, db_path)
-            return self._process_fresh(row, video_dir, frames_dir, frames_rel, manifest_path, db_path, progress, ffmpeg_threads)
+            if plan.load_error is not None:
+                return _FrameExtractionOutcome(
+                    plan.row.id, errors=(f"{plan.row.id}: frames already exist but frames.json could not be read: {plan.load_error}",)
+                )
+            if not plan.needs_fresh:
+                return self._process_existing(plan, db_path)
+            return self._process_fresh(plan, db_path, progress, ffmpeg_threads)
         finally:
-            progress.finish_item(row.id)
+            progress.finish_item(plan.row.id)
 
-    def _process_existing(
-        self,
-        row: VideoRow,
-        video_dir: Path,
-        manifest_path: Path,
-        frames_rel: Path,
-        db_path: Path,
-    ) -> _FrameExtractionOutcome:
-        # Already extracted in a previous run -- ffmpeg/scenedetect are never
-        # re-invoked, but the DB rows are always rewritten from the on-disk
-        # manifest (cheap DELETE+INSERT), so a prior transient DB failure
-        # self-heals instead of staying silently empty forever once
-        # frames.json already exists. Mirrors TranscriptionService exactly.
+    def _process_existing(self, plan: _VideoPlan, db_path: Path) -> _FrameExtractionOutcome:
+        # Already extracted in a previous run with matching settings --
+        # ffmpeg/scenedetect are never re-invoked, but the DB rows are
+        # always rewritten from the on-disk manifest (cheap DELETE+INSERT),
+        # so a prior transient DB failure self-heals instead of staying
+        # silently empty forever. Mirrors TranscriptionService exactly.
+        assert plan.manifest is not None
+        row = plan.row
         try:
-            manifest = FrameManifest.load(manifest_path)
-        except InvalidFrameManifestError as exc:
-            return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: frames already exist but frames.json could not be read: {exc}",))
-
-        try:
-            replace_frames(db_path, row.id, _manifest_to_rows(row.id, manifest))
+            replace_frames(db_path, row.id, _manifest_to_rows(row.id, plan.manifest))
         except DatabaseError as exc:
             return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: frames already exist but database could not be updated: {exc}",))
 
-        if self._reconcile_metadata(video_dir, frames_rel):
+        if self._reconcile_metadata(plan.video_dir, plan.frames_rel):
             return _FrameExtractionOutcome(row.id, skipped=True)
         return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: frames already exist but metadata.json could not be updated",))
 
     def _process_fresh(
         self,
-        row: VideoRow,
-        video_dir: Path,
-        frames_dir: Path,
-        frames_rel: Path,
-        manifest_path: Path,
+        plan: _VideoPlan,
         db_path: Path,
         progress: ProgressReporter,
         ffmpeg_threads: int,
     ) -> _FrameExtractionOutcome:
+        row, video_dir, frames_dir, frames_rel, manifest_path = (
+            plan.row, plan.video_dir, plan.frames_dir, plan.frames_rel, plan.manifest_path,
+        )
         source_video = Path(row.path)
         if not source_video.is_file():
             return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: source video file not found at {source_video}",))
@@ -237,6 +278,18 @@ class FrameExtractionService:
         matched = match_frames_to_candidates(candidates, extracted_frames)
         kept = self._dedup_by_hash(matched)
 
+        if candidates and not kept:
+            # ffmpeg ran without error and reported a matching frame/pts
+            # count, but zero frames actually survived matching+dedup --
+            # e.g. every requested window fell outside what ffmpeg could
+            # actually decode. Writing an empty frames.json here would
+            # silently report "Extracted" for a video with no usable
+            # frames at all; treat it as a per-video failure instead.
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            return _FrameExtractionOutcome(
+                row.id, errors=(f"{row.id}: ffmpeg produced 0 usable frame(s) from {len(candidates)} candidate timestamp(s)",)
+            )
+
         entries: list[FrameManifestEntry] = []
         frame_rows: list[FrameRow] = []
         for position, (pts, path, hash_hex) in enumerate(kept, start=1):
@@ -251,8 +304,12 @@ class FrameExtractionService:
             )
 
         shutil.rmtree(staging_dir, ignore_errors=True)  # removes any dropped near-duplicate frames still there
+        self._remove_stale_frame_files(frames_dir, keep_count=len(kept))  # leftovers from a previous run with different (e.g. looser) settings
 
-        manifest = FrameManifest(video_id=row.id, frames=entries)
+        manifest = FrameManifest(
+            video_id=row.id, frames=entries,
+            interval_seconds=self.interval_seconds, scene_detection=self.scene_detection, keyword_boost=self.keyword_boost,
+        )
         tmp_manifest_path = manifest_path.parent / f"{manifest_path.name}.tmp"
         try:
             manifest.save(tmp_manifest_path)
@@ -269,6 +326,21 @@ class FrameExtractionService:
         if self._reconcile_metadata(video_dir, frames_rel):
             return _FrameExtractionOutcome(row.id, extracted=True)
         return _FrameExtractionOutcome(row.id, errors=(f"{row.id}: frames saved to frames.json but metadata.json could not be updated",))
+
+    def _remove_stale_frame_files(self, frames_dir: Path, *, keep_count: int) -> None:
+        """Remove any frame_NNNN.jpg left over from a previous run whose
+        index falls beyond the current (dense, 1-based) count -- e.g. a
+        prior run with a smaller --interval-seconds produced more frames
+        than this one. New file numbering is always dense from 1, so any
+        higher-numbered file still on disk after finalization is
+        necessarily a leftover, never part of the current manifest."""
+        for existing in frames_dir.glob("frame_*.jpg"):
+            try:
+                index = int(existing.stem.split("_", 1)[1])
+            except (IndexError, ValueError):
+                continue  # not one of ours (unexpected name shape) -- leave it alone
+            if index > keep_count:
+                existing.unlink(missing_ok=True)
 
     def _dedup_by_hash(self, matched: list[tuple[FrameCandidate, float, Path]]) -> list[tuple[float, Path, str]]:
         """Drop a boosted (scene/keyword) frame that is a near-duplicate of

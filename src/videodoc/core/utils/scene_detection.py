@@ -38,15 +38,25 @@ def detect_scene_timestamps(video_path: Path, *, threshold: float = SCENE_DETECT
     with the interval grid's own first frame and carries no "something
     changed here" signal.
 
-    Assumes scenedetect_available() has already been checked by the caller.
-    Wraps any failure from the scenedetect/OpenCV stack (corrupt file,
-    unsupported codec, decode error) in SceneDetectionError: at this
-    boundary with a third-party library whose exception surface is not
-    fully enumerable, broad exception handling is deliberate, matching how
-    extract_audio wraps subprocess/OSError at the ffmpeg boundary."""
-    from scenedetect import ContentDetector, detect  # imported lazily: this module must be importable even when scenedetect isn't installed
+    Assumes scenedetect_available() has already been checked by the caller
+    -- but that check only confirms the package can be *located*
+    (importlib.util.find_spec), not that it actually imports cleanly (a
+    broken/incompatible install, e.g. a corrupt or version-mismatched
+    OpenCV wheel, is a real-world failure mode for exactly this
+    dependency). The import itself is therefore inside the same try/except
+    as the detection call, not above it: an ImportError here is just as
+    much a per-video "scene detection didn't work" failure as a decode
+    error, and must fold into SceneDetectionError the same way, rather than
+    escaping uncaught and crashing the whole run instead of just this one
+    video's future in FrameExtractionService's ThreadPoolExecutor.
 
+    Wraps any failure from the scenedetect/OpenCV stack (import failure,
+    corrupt file, unsupported codec, decode error) in SceneDetectionError:
+    at this boundary with a third-party library whose exception surface is
+    not fully enumerable, broad exception handling is deliberate, matching
+    how extract_audio wraps subprocess/OSError at the ffmpeg boundary."""
     try:
+        from scenedetect import ContentDetector, detect  # imported lazily: this module must be importable even when scenedetect isn't installed
         scenes = detect(str(video_path), ContentDetector(threshold=threshold))
     except Exception as exc:  # noqa: BLE001 -- third-party boundary, see docstring
         raise SceneDetectionError(f"scenedetect failed on {video_path}: {exc}") from exc

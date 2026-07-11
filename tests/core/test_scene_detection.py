@@ -1,3 +1,6 @@
+import sys
+import types
+
 import pytest
 import scenedetect as scenedetect_module
 from scenedetect import FrameTimecode
@@ -48,5 +51,28 @@ def test_detect_scene_timestamps_wraps_failure(tmp_path, monkeypatch):
         raise RuntimeError("cannot open video")
 
     monkeypatch.setattr(scenedetect_module, "detect", fake_detect)
+    with pytest.raises(SceneDetectionError):
+        detect_scene_timestamps(video)
+
+
+def test_detect_scene_timestamps_wraps_broken_install_import_error(tmp_path, monkeypatch):
+    """Regression test: scenedetect_available() only confirms the package
+    can be *located* (importlib.util.find_spec), not that it actually
+    imports cleanly -- a broken/incompatible install (e.g. a corrupt or
+    version-mismatched OpenCV wheel) is a real failure mode for exactly
+    this dependency. detect_scene_timestamps must fold an ImportError at
+    call time into SceneDetectionError, the same as any other failure,
+    rather than letting it escape uncaught and crash the whole
+    FrameExtractionService run instead of just this one video."""
+    video = tmp_path / "a.mp4"
+    video.write_bytes(b"fake")
+    # A present-but-broken 'scenedetect' module: sys.modules already has an
+    # entry for it (so it won't be re-executed), but it's missing
+    # ContentDetector/detect entirely, so `from scenedetect import ...`
+    # raises ImportError -- simulating a real broken install without
+    # actually needing one.
+    broken_module = types.ModuleType("scenedetect")
+    monkeypatch.setitem(sys.modules, "scenedetect", broken_module)
+
     with pytest.raises(SceneDetectionError):
         detect_scene_timestamps(video)
