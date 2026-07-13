@@ -5,6 +5,17 @@ from pathlib import Path
 from typing import Callable
 
 
+def file_fingerprint(path: Path) -> str:
+    """Return a cheap identity fingerprint from filesystem metadata.
+
+    This is intentionally not a content hash: ingest uses it only as a fast
+    unchanged-file guard before falling back to hash_file() when it differs,
+    is missing, or the caller asks for verification.
+    """
+    stat = path.stat()
+    return f"size={stat.st_size};mtime_ns={stat.st_mtime_ns};inode={stat.st_ino}"
+
+
 def hash_file(
     path: Path,
     *,

@@ -2,7 +2,16 @@ import hashlib
 
 import pytest
 
-from videodoc.core.utils.hashing import hash_file
+from videodoc.core.utils.hashing import file_fingerprint, hash_file
+
+
+def test_file_fingerprint_uses_size_mtime_and_inode(tmp_path):
+    path = tmp_path / "video.mp4"
+    path.write_bytes(b"content")
+
+    stat = path.stat()
+
+    assert file_fingerprint(path) == f"size={stat.st_size};mtime_ns={stat.st_mtime_ns};inode={stat.st_ino}"
 
 
 def test_hash_file_matches_reference_digest(tmp_path):

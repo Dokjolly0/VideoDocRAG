@@ -117,8 +117,8 @@ Sources manifest updated: sources.yaml
 
 ## ingest
 
-**Sintassi:** `videodoc ingest <project>`
-**Descrizione:** Per ogni video in `videos/`, calcola l'hash, estrae durata/formato/risoluzione/codec via `ffprobe`, registra il video in `project.db` (SQLite) e crea `workdir/<id>/{audio,frames,transcript,ocr,chunks}/` + `metadata.json`. Idempotente per hash: un video invariato viene saltato senza nemmeno essere ri-analizzato.
+**Sintassi:** `videodoc ingest <project> [--workers N] [--verify]`
+**Descrizione:** Per ogni video in `videos/`, usa un fingerprint rapido (`size` + `mtime` + `inode`) per saltare i rerun invariati senza rileggerli, calcola l'hash SHA-256 quando il fingerprint cambia o con `--verify`, estrae durata/formato/risoluzione/codec via `ffprobe`, registra il video in `project.db` (SQLite) e crea `workdir/<id>/{audio,frames,transcript,ocr,chunks}/` + `metadata.json`.
 **Exit code:** 0 = successo, anche con errori per-video (probe/hash falliti su un singolo file: stampati come `Warning`, il video viene saltato, gli altri continuano) o con un reingest (stampa un `Warning` sui possibili artefatti obsoleti, non cancellati). 1 = progetto sconosciuto, `config.yaml` non valido, **zero video trovati**, `ffprobe` non disponibile in `PATH`, o collisione di id tra due video diversi (stesso slug derivato da nomi file diversi).
 **Prerequisito:** richiede `ffprobe` (parte di FFmpeg) in `PATH` — vedi `RUN.md` §1.
 **Esempio:**

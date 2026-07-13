@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -90,7 +91,7 @@ def test_single_video_ingested(tmp_path, monkeypatch):
     assert metadata["audio_path"] == "workdir/demo/audio"
 
 
-def test_unchanged_video_is_skipped_without_reprobing(tmp_path, monkeypatch):
+def test_unchanged_video_is_skipped_without_rehashing_or_reprobing(tmp_path, monkeypatch):
     project_dir = tmp_path / "demo"
     project_dir.mkdir()
     _make_video(project_dir, "Demo.mp4")
@@ -106,12 +107,79 @@ def test_unchanged_video_is_skipped_without_reprobing(tmp_path, monkeypatch):
     VideoIngestionService(project_dir, _config()).run()
     assert call_count["n"] == 1
 
-    # Second run, file unchanged: probe_video must not be called again --
-    # proves "not processed again" is real, not just the same end result.
+    def fail_hash(path, **kwargs):
+        raise AssertionError("unchanged rerun should use the fast fingerprint, not SHA-256")
+
+    monkeypatch.setattr(ingest_service_module, "hash_file", fail_hash)
+
+    # Second run, file unchanged: neither hash_file nor probe_video should be
+    # called again -- the fast size+mtime+inode guard is enough.
     result = VideoIngestionService(project_dir, _config()).run()
     assert result.skipped == ("demo",)
     assert result.ingested == ()
     assert call_count["n"] == 1
+
+
+def test_verify_rehashes_even_when_fast_fingerprint_matches(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    _make_video(project_dir, "Demo.mp4")
+    _available_ffprobe(monkeypatch)
+    _stub_probe(monkeypatch)
+    VideoIngestionService(project_dir, _config()).run()
+
+    real_hash_file = ingest_service_module.hash_file
+    hash_count = {"n": 0}
+
+    def counting_hash(path, **kwargs):
+        hash_count["n"] += 1
+        return real_hash_file(path, **kwargs)
+
+    def fail_probe(path):
+        raise AssertionError("verified unchanged content should still skip probing")
+
+    monkeypatch.setattr(ingest_service_module, "hash_file", counting_hash)
+    _stub_probe(monkeypatch, fail_probe)
+
+    result = VideoIngestionService(project_dir, _config(), verify_hashes=True).run()
+
+    assert result.skipped == ("demo",)
+    assert result.reingested == ()
+    assert hash_count["n"] == 1
+
+
+def test_same_hash_after_fingerprint_change_skips_and_refreshes_fingerprint(tmp_path, monkeypatch):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    video_path = _make_video(project_dir, "Demo.mp4", content=b"same bytes")
+    _available_ffprobe(monkeypatch)
+    _stub_probe(monkeypatch)
+    result1 = VideoIngestionService(project_dir, _config()).run()
+    first_fingerprint = get_video(result1.database_path, "demo").file_fingerprint
+
+    stat = video_path.stat()
+    os.utime(video_path, ns=(stat.st_atime_ns + 10_000_000_000, stat.st_mtime_ns + 10_000_000_000))
+
+    real_hash_file = ingest_service_module.hash_file
+    hash_count = {"n": 0}
+
+    def counting_hash(path, **kwargs):
+        hash_count["n"] += 1
+        return real_hash_file(path, **kwargs)
+
+    def fail_probe(path):
+        raise AssertionError("same content with a new fingerprint should not be reprobed")
+
+    monkeypatch.setattr(ingest_service_module, "hash_file", counting_hash)
+    _stub_probe(monkeypatch, fail_probe)
+
+    result2 = VideoIngestionService(project_dir, _config()).run()
+    refreshed = get_video(result2.database_path, "demo").file_fingerprint
+
+    assert result2.skipped == ("demo",)
+    assert result2.reingested == ()
+    assert hash_count["n"] == 1
+    assert refreshed != first_fingerprint
 
 
 def test_changed_video_is_reingested_and_warns_without_deleting_workdir(tmp_path, monkeypatch):

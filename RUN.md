@@ -320,7 +320,7 @@ Le esclusioni si basano sulla sezione `scan:` di `config.yaml` (default già rag
 
 ### 5.7 Registrare (ingest) i video di un progetto
 
-Calcola l'hash di ogni video, ne estrae durata/formato/risoluzione/codec con `ffprobe` (vedi §1 per l'installazione), lo registra in `project.db` e crea `workdir/<id>/{audio,frames,transcript,ocr,chunks}/` + `metadata.json`:
+Usa un fingerprint rapido (`size` + `mtime` + `inode`) per saltare i video invariati senza rileggerli, calcola l'hash SHA-256 quando serve (o sempre con `--verify`), estrae durata/formato/risoluzione/codec con `ffprobe` (vedi §1 per l'installazione), registra in `project.db` e crea `workdir/<id>/{audio,frames,transcript,ocr,chunks}/` + `metadata.json`:
 
 ```bash
 videodoc ingest corso-software-x
@@ -336,7 +336,7 @@ Project: corso-software-x
 Database updated: project.db
 ```
 
-È idempotente per contenuto: un video invariato viene saltato (senza nemmeno essere ri-analizzato da `ffprobe`); un video modificato viene riprocessato e genera un avviso, non un errore, sui possibili artefatti obsoleti nelle sue sottocartelle (mai cancellate automaticamente):
+È idempotente per contenuto: un video invariato viene saltato tramite fingerprint rapido (senza hash completo né `ffprobe`); un video modificato viene riprocessato e genera un avviso, non un errore, sui possibili artefatti obsoleti nelle sue sottocartelle (mai cancellate automaticamente):
 
 ```text
 Warning: workshop-05: video content changed and was reingested -- workdir/workshop-05/{audio,frames,transcript,ocr,chunks} may still contain artifacts from the previous version (never deleted automatically); re-run the relevant pipeline phase(s) to refresh them.

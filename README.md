@@ -1303,7 +1303,7 @@ La fase di ingestion registra i video da processare.
 Attività principali:
 
 1. leggere i file video nella cartella `videos/`;
-2. calcolare un hash del file;
+2. calcolare un fingerprint rapido (`size` + `mtime` + `inode`) e, quando serve, l'hash SHA-256 del file;
 3. estrarre durata, formato, risoluzione e codec;
 4. registrare il video nel database SQLite dedicato del progetto (`project.db`);
 5. creare una cartella di lavoro dedicata al video.
@@ -1327,7 +1327,7 @@ workdir/
     └── chunks/
 ```
 
-Questa fase deve essere idempotente. Se un video è già stato registrato e l’hash non è cambiato, non deve essere processato nuovamente.
+Questa fase deve essere idempotente. Se un video è già stato registrato e il fingerprint rapido non è cambiato, viene saltato senza rileggerne tutto il contenuto; se il fingerprint cambia (o si usa `--verify`), viene ricalcolato l'hash SHA-256 e il video viene processato nuovamente solo se l'hash cambia davvero.
 
 ## 15.1 Scansione progetto e sincronizzazione fonti
 
@@ -2569,7 +2569,8 @@ CREATE TABLE videos (
     duration_seconds REAL,
     file_hash TEXT,
     path TEXT,
-    created_at TEXT
+    created_at TEXT,
+    file_fingerprint TEXT
 );
 ```
 

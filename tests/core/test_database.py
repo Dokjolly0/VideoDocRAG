@@ -18,6 +18,7 @@ from videodoc.core.storage.database import (
     replace_frames,
     replace_transcript_segments,
     update_frame_ocr,
+    update_video_file_fingerprint,
     upsert_video,
 )
 
@@ -48,6 +49,49 @@ def test_upsert_video_insert_then_get_roundtrip(tmp_path):
     ensure_schema(db_path)
     upsert_video(db_path, _row())
     assert get_video(db_path, "demo") == _row()
+
+
+def test_ensure_schema_migrates_legacy_videos_table_with_file_fingerprint(tmp_path):
+    db_path = tmp_path / "project.db"
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("""
+            CREATE TABLE videos (
+                id TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                title TEXT,
+                duration_seconds REAL,
+                file_hash TEXT,
+                path TEXT,
+                created_at TEXT
+            )
+        """)
+
+    ensure_schema(db_path)
+
+    with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(videos)")}
+    assert "file_fingerprint" in columns
+
+
+def test_upsert_video_persists_file_fingerprint(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row(file_fingerprint="size=3;mtime_ns=4;inode=5"))
+
+    assert get_video(db_path, "demo").file_fingerprint == "size=3;mtime_ns=4;inode=5"
+
+
+def test_update_video_file_fingerprint_preserves_other_video_fields(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row(title="My Title", file_fingerprint="old"))
+
+    update_video_file_fingerprint(db_path, "demo", "new")
+
+    row = get_video(db_path, "demo")
+    assert row.file_fingerprint == "new"
+    assert row.title == "My Title"
+    assert row.file_hash == "abc123"
 
 
 def test_upsert_video_update_preserves_title_and_created_at(tmp_path):

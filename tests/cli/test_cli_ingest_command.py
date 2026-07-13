@@ -94,13 +94,13 @@ def test_ingest_reingest_prints_stale_artifact_warning(tmp_path, monkeypatch):
     assert "Warning" in result.stdout
     assert "reingested" in result.stdout.lower() or "changed" in result.stdout.lower()
 
-def test_ingest_accepts_workers_flag(tmp_path, monkeypatch):
+def test_ingest_accepts_workers_and_verify_flags(tmp_path, monkeypatch):
     custom = tmp_path / "demo"
     runner.invoke(app, ["init", "demo", "--path", str(custom)])
     (custom / "videos" / "a.mp4").write_bytes(b"fake video")
     _available_ffprobe(monkeypatch)
     _stub_probe(monkeypatch)
 
-    result = runner.invoke(app, ["ingest", "demo", "--workers", "1"])
+    result = runner.invoke(app, ["ingest", "demo", "--workers", "1", "--verify"])
     assert result.exit_code == 0
     assert "Ingested" in result.stdout

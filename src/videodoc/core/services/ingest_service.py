@@ -10,10 +10,10 @@ from videodoc.core.config import ProjectConfig
 from videodoc.core.errors import ExternalToolNotFoundError, NoVideosFoundError, VideoIdCollisionError
 from videodoc.core.models.video_metadata import VideoMetadata
 from videodoc.core.storage import filesystem
-from videodoc.core.storage.database import VideoRow, ensure_schema, get_video, upsert_video
+from videodoc.core.storage.database import VideoRow, ensure_schema, get_video, update_video_file_fingerprint, upsert_video
 from videodoc.core.utils.ffprobe import VideoProbeError, VideoProbeResult, probe_video
 from videodoc.core.utils.hardware import resolve_cpu_workers, resolve_executor_workers
-from videodoc.core.utils.hashing import hash_file
+from videodoc.core.utils.hashing import file_fingerprint, hash_file
 from videodoc.core.utils.progress import ProgressReporter
 from videodoc.core.utils.slug import slugify
 
@@ -41,16 +41,26 @@ class _IngestWorkItem:
 class _IngestOutcome:
     item: _IngestWorkItem
     file_hash: str | None = None
+    file_fingerprint: str | None = None
     probe: VideoProbeResult | None = None
     skipped: bool = False
+    refresh_fingerprint: bool = False
     error: str | None = None
 
 
 class VideoIngestionService:
-    def __init__(self, project_dir: Path, config: ProjectConfig, *, workers_override: int | None = None) -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        config: ProjectConfig,
+        *,
+        workers_override: int | None = None,
+        verify_hashes: bool = False,
+    ) -> None:
         self.project_dir = project_dir
         self.config = config
         self.workers_override = workers_override
+        self.verify_hashes = verify_hashes
 
     def run(self, progress: ProgressReporter | None = None) -> IngestResult:
         progress = progress or ProgressReporter()
@@ -99,6 +109,8 @@ class VideoIngestionService:
                     errors.append(outcome.error)
                     continue
                 if outcome.skipped:
+                    if outcome.refresh_fingerprint and outcome.file_fingerprint is not None:
+                        update_video_file_fingerprint(db_path, outcome.item.video_id, outcome.file_fingerprint)
                     skipped.append(outcome.item.video_id)
                     continue
 
@@ -157,30 +169,63 @@ class VideoIngestionService:
         progress.start_item(item.source_key, item.index, total)
         try:
             try:
+                fingerprint = file_fingerprint(item.video_file)
+            except OSError as exc:
+                return _IngestOutcome(item, error=f"{item.video_file.name}: {exc}")
+
+            existing = item.existing_row
+            if (
+                existing is not None
+                and not self.verify_hashes
+                and existing.file_hash
+                and existing.file_fingerprint == fingerprint
+            ):
+                # Cheap unchanged fast path: the size+mtime+inode fingerprint
+                # matches, so an ordinary rerun skips without streaming the video.
+                return _IngestOutcome(
+                    item,
+                    file_hash=existing.file_hash,
+                    file_fingerprint=fingerprint,
+                    skipped=True,
+                )
+
+            try:
                 file_hash = hash_file(
                     item.video_file,
                     progress_callback=lambda fraction, source_key=item.source_key: progress.update_item(source_key, fraction),
                 )
             except OSError as exc:
-                return _IngestOutcome(item, error=f"{item.video_file.name}: {exc}")
+                return _IngestOutcome(item, file_fingerprint=fingerprint, error=f"{item.video_file.name}: {exc}")
 
-            if item.existing_row is not None and item.existing_row.file_hash == file_hash:
-                # Unchanged: not reprocessed at all, not even probed --
-                # this is what makes "must not be processed again" real.
-                return _IngestOutcome(item, file_hash=file_hash, skipped=True)
+            if existing is not None and existing.file_hash == file_hash:
+                # Fingerprint changed (or --verify requested), but content did
+                # not. Skip processing and refresh the stored fast guard.
+                return _IngestOutcome(
+                    item,
+                    file_hash=file_hash,
+                    file_fingerprint=fingerprint,
+                    skipped=True,
+                    refresh_fingerprint=existing.file_fingerprint != fingerprint,
+                )
 
             try:
                 probe = probe_video(item.video_file)
             except VideoProbeError as exc:
-                return _IngestOutcome(item, file_hash=file_hash, error=f"{item.video_file.name}: {exc}")
+                return _IngestOutcome(
+                    item,
+                    file_hash=file_hash,
+                    file_fingerprint=fingerprint,
+                    error=f"{item.video_file.name}: {exc}",
+                )
 
-            return _IngestOutcome(item, file_hash=file_hash, probe=probe)
+            return _IngestOutcome(item, file_hash=file_hash, file_fingerprint=fingerprint, probe=probe)
         finally:
             progress.finish_item(item.source_key)
 
     def _commit_outcome(self, db_path: Path, outcome: _IngestOutcome) -> str:
         item = outcome.item
         assert outcome.file_hash is not None
+        assert outcome.file_fingerprint is not None
         assert outcome.probe is not None
 
         video_dir = self.project_dir / self.config.paths.workdir / item.video_id
@@ -199,6 +244,7 @@ class VideoIngestionService:
                 file_hash=outcome.file_hash,
                 path=item.source_key,
                 created_at=created_at,
+                file_fingerprint=outcome.file_fingerprint,
             ),
         )
 

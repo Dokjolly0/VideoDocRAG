@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS videos (
     duration_seconds REAL,
     file_hash TEXT,
     path TEXT,
-    created_at TEXT
+    created_at TEXT,
+    file_fingerprint TEXT
 );
 """
 
@@ -65,6 +66,26 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return sqlite3.connect(db_path, timeout=30)
 
 
+_VIDEO_SELECT_COLUMNS = "id, filename, title, duration_seconds, file_hash, path, created_at, file_fingerprint"
+_LEGACY_VIDEO_SELECT_COLUMNS = "id, filename, title, duration_seconds, file_hash, path, created_at, NULL AS file_fingerprint"
+
+
+def _video_table_columns(conn: sqlite3.Connection) -> set[str]:
+    return {row[1] for row in conn.execute("PRAGMA table_info(videos)").fetchall()}
+
+
+def _video_select_columns(conn: sqlite3.Connection) -> str:
+    if "file_fingerprint" in _video_table_columns(conn):
+        return _VIDEO_SELECT_COLUMNS
+    return _LEGACY_VIDEO_SELECT_COLUMNS
+
+
+def _ensure_videos_columns(conn: sqlite3.Connection) -> None:
+    columns = _video_table_columns(conn)
+    if "file_fingerprint" not in columns:
+        conn.execute("ALTER TABLE videos ADD COLUMN file_fingerprint TEXT")
+
+
 @dataclass(frozen=True)
 class VideoRow:
     id: str
@@ -74,6 +95,7 @@ class VideoRow:
     file_hash: str
     path: str  # absolute posix -- mirrors sources.yaml's internal-or-external duality
     created_at: str  # ISO 8601 UTC; only actually applied on first INSERT, see upsert_video
+    file_fingerprint: str | None = None  # cheap size+mtime+inode guard for fast ingest reruns
 
 
 @dataclass(frozen=True)
@@ -116,6 +138,7 @@ def ensure_schema(db_path: Path) -> None:
         with closing(_connect(db_path)) as conn, conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(_CREATE_VIDEOS_TABLE)
+            _ensure_videos_columns(conn)
             conn.execute(_CREATE_TRANSCRIPT_SEGMENTS_TABLE)
             conn.execute(_CREATE_FRAMES_TABLE)
     except sqlite3.Error as exc:
@@ -125,9 +148,9 @@ def ensure_schema(db_path: Path) -> None:
 def get_video(db_path: Path, video_id: str) -> VideoRow | None:
     try:
         with closing(_connect(db_path)) as conn, conn:
+            columns = _video_select_columns(conn)
             row = conn.execute(
-                "SELECT id, filename, title, duration_seconds, file_hash, path, created_at "
-                "FROM videos WHERE id = ?",
+                f"SELECT {columns} FROM videos WHERE id = ?",
                 (video_id,),
             ).fetchone()
     except sqlite3.Error as exc:
@@ -152,9 +175,9 @@ def list_videos(db_path: Path) -> list[VideoRow]:
             ).fetchone()
             if table_exists is None:
                 return []
+            columns = _video_select_columns(conn)
             rows = conn.execute(
-                "SELECT id, filename, title, duration_seconds, file_hash, path, created_at "
-                "FROM videos ORDER BY id"
+                f"SELECT {columns} FROM videos ORDER BY id"
             ).fetchall()
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot list videos in {db_path}: {exc}") from exc
@@ -170,13 +193,18 @@ def upsert_video(db_path: Path, row: VideoRow) -> None:
         with closing(_connect(db_path)) as conn, conn:
             conn.execute(
                 """
-                INSERT INTO videos (id, filename, title, duration_seconds, file_hash, path, created_at)
-                VALUES (:id, :filename, :title, :duration_seconds, :file_hash, :path, :created_at)
+                INSERT INTO videos (
+                    id, filename, title, duration_seconds, file_hash, path, created_at, file_fingerprint
+                )
+                VALUES (
+                    :id, :filename, :title, :duration_seconds, :file_hash, :path, :created_at, :file_fingerprint
+                )
                 ON CONFLICT(id) DO UPDATE SET
                     filename = excluded.filename,
                     duration_seconds = excluded.duration_seconds,
                     file_hash = excluded.file_hash,
-                    path = excluded.path
+                    path = excluded.path,
+                    file_fingerprint = excluded.file_fingerprint
                 """,
                 {
                     "id": row.id,
@@ -186,10 +214,22 @@ def upsert_video(db_path: Path, row: VideoRow) -> None:
                     "file_hash": row.file_hash,
                     "path": row.path,
                     "created_at": row.created_at,
+                    "file_fingerprint": row.file_fingerprint,
                 },
             )
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot write video '{row.id}' to {db_path}: {exc}") from exc
+
+
+def update_video_file_fingerprint(db_path: Path, video_id: str, file_fingerprint: str) -> None:
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.execute(
+                "UPDATE videos SET file_fingerprint = ? WHERE id = ?",
+                (file_fingerprint, video_id),
+            )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot update video '{video_id}' fingerprint in {db_path}: {exc}") from exc
 
 
 def replace_transcript_segments(db_path: Path, video_id: str, segments: list[TranscriptSegmentRow]) -> None:
