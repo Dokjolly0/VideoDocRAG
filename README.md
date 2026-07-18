@@ -1051,6 +1051,7 @@ videodoc frames <project_name>
 videodoc ocr <project_name>
 videodoc code <project_name>
 videodoc chunk <project_name>
+videodoc embed <project_name>
 videodoc index <project_name>
 videodoc outline <project_name>
 videodoc generate <project_name>
@@ -1689,6 +1690,8 @@ Modelli consigliati:
 - `jina-embeddings-v2`.
 
 Per contenuti italiani e tecnici, è preferibile usare un modello multilingua di buona qualità.
+
+Nota implementativa: questa fase è implementata dal comando **`videodoc embed`**. Il comando legge i manifest prodotti da `videodoc chunk` (`workdir/<video_id>/chunks/<video_id>.json`) e genera embedding separati per `transcript`, `ocr`, `code`, `summary` e `combined` quando il testo corrispondente è presente. L'output viene salvato in `indexes/embeddings/<video_id>.json`, con un record per embedding contenente `chunk_id`, `embedding_type`, testo originale, hash del testo, vettore numerico e metadata pronti per la fase di indicizzazione (§23). Per restare completamente locale, riproducibile e senza download impliciti, il backend attuale è un **feature-hashing embedding** deterministico a 256 dimensioni (`backend="feature-hashing"`), mentre `config.embedding.provider`/`model` vengono comunque registrati per idempotenza e compatibilità futura con modelli reali come `bge-m3`. Cambi ai chunk o alle impostazioni embedding forzano una nuova generazione. Vedi `docs/features/embedding.md`.
 
 ---
 

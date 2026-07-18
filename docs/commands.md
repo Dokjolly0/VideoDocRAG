@@ -302,6 +302,32 @@ Project: corso-software-x
 
 ---
 
+## embed
+
+**Sintassi:** `videodoc embed <project> [--workers N]`
+**Descrizione:** Per ogni video con manifest chunk già generato, crea embedding per `transcript`, `ocr`, `code`, `summary` e `combined`, salvandoli in `indexes/embeddings/<id>.json`. Il backend attuale è locale e deterministico (`feature-hashing`, 256 dimensioni): non scarica modelli, non richiede servizi esterni e registra comunque `config.embedding.provider`/`model` per idempotenza e upgrade futuri.
+**Exit code:** 0 = successo, anche con errori per-video (manifest chunk/embedding corrotto su un singolo video: stampato come `Warning`, gli altri continuano). 1 = progetto sconosciuto, `config.yaml` non valido, nessun video ancora registrato (`ingest` mai eseguito), provider embedding non supportato, o problema strutturale su `project.db`.
+**Prerequisito:** richiede `videodoc chunk` per produrre input utili; un video senza chunk viene saltato silenziosamente. Cambi ai chunk o a `config.embedding.*` innescano una nuova generazione.
+**Esempio:**
+```
+$ videodoc embed corso-software-x
+Project: corso-software-x
++---------------+
+| Processed | 8 |
+| Skipped   | 0 |
++---------------+
+
+$ videodoc embed corso-software-x
+Project: corso-software-x
++---------------+
+| Processed | 0 |
+| Skipped   | 8 |
++---------------+
+```
+**Vedi anche:** [features/embedding.md](features/embedding.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

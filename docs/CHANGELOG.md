@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Chunk embeddings
+- Added `videodoc embed`: reads chunk manifests and writes per-video embedding manifests in `indexes/embeddings/<id>.json`, with records for transcript, OCR, code, summary and combined text — see [features/embedding.md](features/embedding.md).
+- Added a deterministic local feature-hashing embedding backend (`core/utils/embedding.py`) with 256-dimensional L2-normalized vectors, no downloads, no services, and no new runtime dependencies. `config.embedding.provider`/`model` are still recorded for idempotency and future model-backed engines.
+- Added `core/models/embedding_manifest.py` and `core/services/embedding_service.py`, including chunk input signatures over topic/summary/transcript/OCR/code/metadata hashes so upstream chunk changes trigger re-embedding.
+- Added tests for embedding utility determinism, manifest validation, service idempotency/error handling/stale-clearing behavior, and CLI wiring.
+- Docs: README §22, `docs/commands.md`, `RUN.md`, and `docs/features/embedding.md` now document `videodoc embed`.
+
 ## Unreleased — Intelligent chunking
 - Added `videodoc chunk`: for every video with transcript/OCR/code inputs, builds deterministic time chunks in `workdir/<id>/chunks/<id>.json`, replaces that video's rows in the new `chunks` table, and updates `metadata.json` (`chunks_path`) — see [features/chunking.md](features/chunking.md).
 - Added transcript-backed windowing with config-driven duration bounds (`chunking.min_duration_seconds` / `max_duration_seconds`) plus pause splitting, OCR/code enrichment inside each time interval, and OCR/code-only fallback windows when transcript is not available.

@@ -4,6 +4,7 @@ from videodoc.cli.commands import (
     chunk,
     code,
     doctor,
+    embed,
     extract_audio,
     frames,
     ingest,
@@ -32,6 +33,7 @@ app.command("frames")(frames.frames_command)
 app.command("ocr")(ocr.ocr_command)
 app.command("code")(code.code_command)
 app.command("chunk")(chunk.chunk_command)
+app.command("embed")(embed.embed_command)
 app.command("doctor")(doctor.doctor_command)
 app.command("setup")(setup.setup_command)
 

@@ -68,6 +68,14 @@ class InvalidChunkManifestError(VideoDocError):
     """Raised when a video's chunk manifest is missing, malformed, or fails validation."""
 
 
+class InvalidEmbeddingManifestError(VideoDocError):
+    """Raised when a video's embedding manifest is missing, malformed, or fails validation."""
+
+
+class EmbeddingEngineNotSupportedError(VideoDocError):
+    """Raised when config.embedding.provider names an embedding provider that is not implemented."""
+
+
 class OCREngineUnavailableError(VideoDocError):
     """Raised once, up front, when at least one video needs fresh OCR but the 'rapidocr'
     package cannot be imported -- checked a single time per run rather than once per frame.

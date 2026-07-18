@@ -555,7 +555,41 @@ Project: corso-software-x
 
 Un video senza transcript, OCR o codice viene saltato senza errore. Se nessun video è ancora stato registrato (`ingest` mai eseguito), o se c'è un problema strutturale su `project.db`, il comando fallisce con `exit code` 1. Problemi per-video su manifest chunk corrotti vengono stampati come `Warning`.
 
-### 5.14 Verificare lo stato dell'ambiente (`doctor`)
+### 5.14 Generare gli embedding dei chunk
+
+Per ogni video con chunk già generati, crea embedding numerici per transcript, OCR, codice, summary e contenuto combinato, salvandoli in `indexes/embeddings/<id>.json`:
+
+```bash
+videodoc embed corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Processed | 8 |
+| Skipped   | 0 |
++---------------+
+```
+
+Il backend attuale è locale e deterministico (`feature-hashing`, 256 dimensioni): non scarica modelli e non richiede servizi esterni. È un backend bootstrap riproducibile, pensato per sbloccare la pipeline e la fase di indicizzazione; `config.embedding.provider`/`model` restano registrati nel manifest per idempotenza e per una futura sostituzione con un modello reale.
+
+È idempotente sui manifest chunk: se testo, metadata, intervalli o impostazioni embedding non cambiano, il video viene saltato. Se `videodoc chunk` produce nuovi chunk, o cambia `config.embedding`, gli embedding vengono rigenerati.
+
+```bash
+videodoc embed corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Processed | 0 |
+| Skipped   | 8 |
++---------------+
+```
+
+Un video senza chunk viene saltato senza errore. Provider embedding diversi da `local` falliscono esplicitamente finché non verrà implementato un backend dedicato.
+
+### 5.15 Verificare lo stato dell'ambiente (`doctor`)
 
 Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
 
@@ -577,7 +611,7 @@ Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode —
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
-### 5.15 Applicare le correzioni automaticamente (`setup`)
+### 5.16 Applicare le correzioni automaticamente (`setup`)
 
 Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
 
@@ -726,7 +760,7 @@ Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.all
 FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
 
 **`videodoc transcribe` fallisce con un errore che menziona `cublas` o una libreria CUDA mancante.**
-Esegui prima `videodoc doctor` (§5.14): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.15) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
+Esegui prima `videodoc doctor` (§5.15): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.16) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
 
 `faster-whisper` rileva automaticamente l'hardware disponibile e, su una macchina dove viene individuata una GPU ma mancano le librerie runtime CUDA (es. `cublas64_12.dll` su Windows), fallisce invece di ripiegare in modo pulito sulla CPU. **Dove esattamente fallisce cambia il comportamento del comando**, e dipende da un dettaglio interno di `faster-whisper`/`ctranslate2` non controllabile da questo codice:
 - Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.
