@@ -20,9 +20,9 @@
 - `src/videodoc/cli/commands/scan.py` — the `videodoc scan` command.
 
 ## Design decisions
-- Zero videos found does not fail `scan` — it's ingestion's job (a future step), not scan's, to refuse to proceed without videos.
+- Zero videos found does not fail `scan` — it's ingestion's job, not scan's, to refuse to proceed without videos.
 - A missing or non-directory external source never crashes or fails `scan` (exit code 0): 0 files found plus an explicit warning. Distinguishing "not found" from "exists but is a file" required a dedicated `is_directory` field on `SourcePathReport` separate from `exists`.
-- `codebase.files`/`videos`/`attachments` are stored as absolute posix paths uniformly, even for codebase entries. A future relative-to-codebase-root form (for citations like `codebase/src/app/main.py#L24-L58`) is a single `.relative_to()` away once that step actually needs it — no reason to anticipate a mixed representation now.
+- `codebase.files`/`videos`/`attachments` are stored as absolute posix paths uniformly in `sources.yaml`, even for codebase entries. Citation-friendly relative links are produced later by `videodoc sync-codebase`, where snippet extraction has the codebase root and line ranges available.
 
 ## CLI
 

@@ -92,7 +92,7 @@
 ## Unreleased — Intelligent chunking
 - Added `videodoc chunk`: for every video with transcript/OCR/code inputs, builds deterministic time chunks in `workdir/<id>/chunks/<id>.json`, replaces that video's rows in the new `chunks` table, and updates `metadata.json` (`chunks_path`) — see [features/chunking.md](features/chunking.md).
 - Added transcript-backed windowing with config-driven duration bounds (`chunking.min_duration_seconds` / `max_duration_seconds`) plus pause splitting, OCR/code enrichment inside each time interval, and OCR/code-only fallback windows when transcript is not available.
-- Added one code-specific chunk per `code_blocks` row (`source_type="code"`) so the future embedding/indexing phase can index code as a standalone retrieval document while still keeping it attached to surrounding narrative chunks.
+- Added one code-specific chunk per `code_blocks` row (`source_type="code"`) so the embedding/indexing phase can index code as a standalone retrieval document while still keeping it attached to surrounding narrative chunks.
 - Added `core/models/chunk_manifest.py` with transcript/frame/code input signatures, ensuring reruns of transcription, OCR, code detection, or frame extraction trigger a fresh chunking pass instead of reusing stale chunks.
 - Added `replace_chunks()`/`list_chunks()` and `ChunkRow` in `core/storage/database.py`; chunking reads upstream tables only and writes only the `chunks` table plus `metadata.json`.
 - Added tests for manifest loading, DB helpers, chunking service idempotency/self-heal/reprocessing/fallback behavior, and CLI wiring.
@@ -161,7 +161,7 @@
 - Hardened: audio is written to a temporary `.tmp` path and moved onto the final `.wav` only via an atomic `Path.replace()` after FFmpeg succeeds — an interrupted FFmpeg process (crash, disk full, Ctrl+C) can no longer leave a partial/corrupt file at the path the idempotency check reads, which would otherwise be misread as "already extracted" forever with no way to detect or fix it
 - Idempotent by file presence: if a video's `.wav` already exists, FFmpeg is never re-invoked; `metadata.json` is still reconciled if it was left holding `ingest`'s original folder-only placeholder
 - Fixed: `db_path.exists()` is checked before any `sqlite3.connect()` call, so a project where `ingest` was never run raises `NoVideosFoundError` without silently creating an empty `project.db` file as a side effect of the failure path itself
-- README §12.1/§16 updated to reflect the dedicated `extract-audio` command, which the README's own command list previously omitted (it jumped straight from `ingest` to the not-yet-implemented `transcribe`)
+- README §12.1/§16 updated to reflect the dedicated `extract-audio` command, which the README's own command list previously omitted (it jumped straight from `ingest` to `transcribe`)
 
 ## Step 5 — Audio transcription
 - Added `videodoc transcribe`: for every video with extracted audio, transcribes it via `faster-whisper` into `workdir/<id>/transcript/<id>.json` and the new `transcript_segments` table in `project.db`, and updates that video's `metadata.json` (`transcript_path`) — see [features/transcription.md](features/transcription.md)
@@ -207,7 +207,7 @@
 - Removed the Python scene-detection dependency; FFmpeg is the single external tool for both scene detection and frame extraction.
 
 ## Step 9 — OCR of extracted screenshots
-- Added `videodoc ocr`: for every video with frames already extracted, runs RapidOCR on each frame image and records per-frame text/confidence in `workdir/<id>/ocr/<id>.json` and the `frames` table's `ocr_text`/`ocr_confidence` columns, never touching `perceptual_hash`/`contains_code` (the latter reserved for the not-yet-implemented code-detection phase, README §20) — see [features/ocr.md](features/ocr.md)
+- Added `videodoc ocr`: for every video with frames already extracted, runs RapidOCR on each frame image and records per-frame text/confidence in `workdir/<id>/ocr/<id>.json` and the `frames` table's `ocr_text`/`ocr_confidence` columns, never touching `perceptual_hash`/`contains_code` (the latter is owned by the code-detection phase, README §20) — see [features/ocr.md](features/ocr.md)
 - Chosen RapidOCR (`rapidocr` + `onnxruntime`) over README's original PaddleOCR default, following this project's established "Nota implementativa" pattern (see §17/§18): `paddlepaddle`'s Windows install story is notoriously painful (separate CPU/GPU/CUDA-version wheels), RapidOCR is plain pip-installable with no system binary. `config.ocr.engine`'s default is corrected from `"paddleocr"` to `"rapidocr"`
 - Verified directly against the installed `rapidocr` 3.9.1 (not assumed from documentation alone): `result.txts`/`result.scores` are both `None` — not empty tuples — when zero text is detected; `run_ocr()` treats this as "ran cleanly, found nothing", not a failure
 - Idempotent by `ocr.json`'s stored settings (`engine`/`languages`/`min_confidence`) AND by the current frame-id set: a `videodoc frames` re-run producing a different frame set now also triggers re-OCR, not just an OCR-settings change — the OCR-phase-specific idempotency edge, absent from `frames.json`'s own settings-only comparison

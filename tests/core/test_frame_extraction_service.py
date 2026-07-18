@@ -236,7 +236,7 @@ def test_skip_when_manifest_exists_self_heals_db(tmp_path, monkeypatch):
 def test_skip_when_manifest_exists_preserves_ocr_and_code_columns(tmp_path, monkeypatch):
     """Regression test: a plain idempotent 'videodoc frames' rerun (settings
     unchanged, self-heal path only) must never wipe ocr_text/ocr_confidence/
-    contains_code -- those belong to OCRService (README §19) and a future
+    contains_code -- those belong to OCRService (README §19) and the
     §20 code-detection phase, not to this one, and frames.json itself never
     carries them at all. Rebuilding DB rows from the manifest alone would
     otherwise silently clobber annotations a later phase already wrote for

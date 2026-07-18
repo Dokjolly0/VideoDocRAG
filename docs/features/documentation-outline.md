@@ -6,7 +6,7 @@
 The implementation is deterministic and local. It does not call an LLM yet: it reads ingested video titles, chunk topics/summaries, OCR/transcript snippets, code blocks, and optional `sources.yaml` attachment/codebase entries, then maps them into the standard documentation sections from the README.
 
 ## Manual Edit Safety
-`docs/outline.md` is meant to be edited before the future `videodoc generate` phase. For that reason, the command never overwrites an existing outline by default. A rerun reports `Skipped: yes` and preserves the file exactly. Use `--force` to regenerate it from the current chunks.
+`docs/outline.md` is meant to be edited before the `videodoc generate` phase. For that reason, the command never overwrites an existing outline by default. A rerun reports `Skipped: yes` and preserves the file exactly. Use `--force` to regenerate it from the current chunks.
 
 ## Generated Shape
 The generated outline contains:

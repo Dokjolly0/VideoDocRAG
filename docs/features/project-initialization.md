@@ -21,7 +21,7 @@
 ## Design decisions
 - The canonical `config.yaml` schema is the full one from README §30, not the simplified example in §14 (confirmed with the project owner) — the §14 example is illustrative only.
 - `slugify()` stays a dependency-free utility raising a plain `ValueError`; `ProjectService` translates that into the domain exception `InvalidProjectNameError` at its single call site, so the CLI only ever needs to catch domain exceptions from `core.errors`.
-- `sources.yaml` is created as an empty placeholder (`# Populated by 'videodoc scan'`), not a pre-defined schema — that schema belongs to the (not yet implemented) `scan` step.
+- `sources.yaml` is created as an empty placeholder (`# Populated by 'videodoc scan'`), not a pre-defined schema — that schema belongs to the dedicated `scan` step, keeping initialization free of source enumeration side effects.
 - Canonical project identifier: the slug, always — see `docs/features/slugify.md` for the full rule and the two regressions it closes (registry key mismatch between `init`/`link`; unintended aliasing when re-initializing a path that already holds a different project).
 
 ## CLI

@@ -36,7 +36,7 @@ Each `EmbeddingRecord` stores:
 - dimensions
 - metadata copied from the chunk, plus video/timestamp/topic/source fields and language when available
 
-The future vector-indexing phase can ingest this manifest directly without recomputing text assembly.
+The vector-indexing phase ingests this manifest directly without recomputing text assembly.
 
 ## Idempotency
 `EmbeddingManifest.chunk_inputs` stores signatures for every input chunk:
