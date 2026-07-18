@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; sezioni Markdown — `generate`; revisione — `review`; export — `export`; chat salvata — `chat`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (GUI e API web — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; sezioni Markdown — `generate`; revisione — `review`; export — `export`; chat salvata — `chat`; stato e ispezione — `status`, `inspect`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (GUI e API web — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -789,7 +789,55 @@ Modalità:
 
 Filtri supportati: `--video` ripetibile, `--from HH:MM:SS`, `--to HH:MM:SS`, `--top-k N`.
 
-### 5.22 Verificare lo stato dell'ambiente (`doctor`)
+### 5.22 Controllare lo stato del progetto (`status`)
+
+Mostra una vista sintetica e non distruttiva della pipeline:
+
+```bash
+videodoc status corso-software-x
+```
+
+```text
+Project: corso-software-x
++----------------------+--------------------------------------------------+
+| Videos               | 8                                                |
+| Audio extracted      | 8/8                                              |
+| Transcribed          | 8/8                                              |
+| Frames extracted     | 8/8                                              |
+| OCR completed        | 7/8                                              |
+| Chunks generated     | 8/8                                              |
+| Raw index            | yes (512 records, 8 inputs)                      |
+| Documentation        | outline=yes, sections=8, sources=8, review=yes, exports=mkdocs |
+| Chat sessions        | 3                                                |
++----------------------+--------------------------------------------------+
+```
+
+`status` legge file, manifest e `project.db`, ma non crea o modifica artefatti. È utile dopo una pipeline interrotta per capire da quale comando ripartire.
+
+### 5.23 Ispezionare un timestamp (`inspect`)
+
+Mostra fonti grezze e documentazione collegate a un punto del video:
+
+```bash
+videodoc inspect corso-software-x --video workshop_01.mp4 --timestamp 00:21:04
+```
+
+```text
+Project: corso-software-x
++--------------------+--------------------------------------------------+
+| Video              | workshop_01.mp4 (workshop_01)                  |
+| Timestamp          | 00:21:04                                        |
+| Transcript         | 00:21:00-00:21:10, confidence 0.94: Ora lanciamo il comando... |
+| Frame              | workdir/workshop_01/frames/frame_0042.jpg @00:21:04 (distance 0.0s) |
+| OCR                | npm create vite@latest my-app (confidence 0.91) |
+| Chunk              | workshop_01_chunk_0008 00:20:30-00:22:00 Installazione |
+| Documentation hits | 1                                                |
++--------------------+--------------------------------------------------+
+```
+
+Se il progetto contiene un solo video, `--video` può essere omesso; con più video è obbligatorio per evitare ambiguità.
+
+### 5.24 Verificare lo stato dell'ambiente (`doctor`)
 
 Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
 
@@ -811,7 +859,7 @@ Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode —
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
-### 5.23 Applicare le correzioni automaticamente (`setup`)
+### 5.25 Applicare le correzioni automaticamente (`setup`)
 
 Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
 
@@ -997,10 +1045,9 @@ Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslat
 
 ## 9. Cosa non è ancora disponibile
 
-Questi step coprono gestione progetti, scansione fonti, ingestion video, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale, outline, generazione sezioni Markdown, revisione automatica, export e chat salvata. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi step coprono gestione progetti, scansione fonti, ingestion video, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale, outline, generazione sezioni Markdown, revisione automatica, export, chat salvata, stato pipeline e ispezione puntuale. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
 - `videodoc sync-codebase` — sincronizzazione e indicizzazione della codebase;
-- `videodoc status`, `inspect` — stato pipeline e ispezione puntuale;
 - l'interfaccia GUI (`videodoc gui`).
 
 Questi comandi verranno aggiunti negli step successivi.

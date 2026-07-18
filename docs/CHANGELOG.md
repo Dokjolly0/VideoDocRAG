@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Pipeline status and timestamp inspection
+- Added `videodoc status`: non-destructive project pipeline summary over `sources.yaml`, `project.db`, `workdir/`, `indexes/`, `docs/`, `exports/`, and saved chat sessions — see [features/status-inspect.md](features/status-inspect.md).
+- Added `videodoc inspect --timestamp HH:MM:SS [--video NAME]`: timestamp drill-down for transcript, frame/OCR, nearby code blocks, chunks, and generated documentation source manifests.
+- Added `core/services/status_service.py` and `core/services/inspection_service.py`, plus CLI wiring and an `InspectionUnavailableError`.
+- Added service and CLI tests for partial projects, populated pipeline artifacts, ambiguous video selection, invalid timecodes, and timestamp context output.
+- Docs: README §12/§35, `docs/commands.md`, `RUN.md`, and `docs/features/status-inspect.md` now document `videodoc status` and `videodoc inspect`.
+
 ## Unreleased — Chat and filtered retrieval
 - Added `videodoc chat`: saved chat sessions with `project.db` rows and `sessions/<session_id>.json` snapshots — see [features/chat.md](features/chat.md).
 - Extended `videodoc ask` with `--source docs|raw|hybrid`, repeated `--video`, `--from`, `--to`, and source-aware output.

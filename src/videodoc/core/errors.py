@@ -112,6 +112,10 @@ class DocumentationExportFormatError(VideoDocError):
     """Raised when a requested documentation export format is not supported."""
 
 
+class InspectionUnavailableError(VideoDocError):
+    """Raised when timestamp inspection cannot resolve the requested video/source context."""
+
+
 class OCREngineUnavailableError(VideoDocError):
     """Raised once, up front, when at least one video needs fresh OCR but the 'rapidocr'
     package cannot be imported -- checked a single time per run rather than once per frame.

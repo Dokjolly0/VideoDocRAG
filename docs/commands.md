@@ -400,6 +400,64 @@ Sources:
 
 ---
 
+## status
+
+**Sintassi:** `videodoc status <project>`
+**Descrizione:** Mostra una vista non distruttiva dello stato pipeline del progetto: fonti scansionate, video registrati, audio, trascrizioni, frame, OCR, codice, chunk, embedding, indici, documentazione, export e chat salvate. Il comando legge manifest, file e `project.db`; non crea tabelle né modifica artefatti.
+**Exit code:** 0 = riepilogo stampato. 1 = progetto sconosciuto, `config.yaml` non valido, o problema strutturale su `project.db` (es. `project.db` è una cartella).
+**Esempio:**
+```
+$ videodoc status corso-software-x
+Project: corso-software-x
++----------------------+--------------------------------------------------+
+| Path                 | .../corso-software-x                             |
+| Sources scan         | yes (videos=8, attachments=3, codebase_files=42) |
+| Videos               | 8                                                |
+| Audio extracted      | 8/8                                              |
+| Transcribed          | 8/8                                              |
+| Frames extracted     | 8/8                                              |
+| OCR completed        | 7/8                                              |
+| Code extracted       | 7/8                                              |
+| Chunks generated     | 8/8                                              |
+| Embeddings generated | 8/8                                              |
+| Raw index            | yes (512 records, 8 inputs)                      |
+| Documentation index  | yes (8 records, 8 inputs)                        |
+| Documentation        | outline=yes, sections=8, sources=8, review=yes, exports=mkdocs |
+| Chat sessions        | 3                                                |
++----------------------+--------------------------------------------------+
+```
+**Vedi anche:** [features/status-inspect.md](features/status-inspect.md)
+
+---
+
+## inspect
+
+**Sintassi:** `videodoc inspect <project> --timestamp HH:MM:SS [--video NAME]`
+**Descrizione:** Ispeziona un timestamp e mostra il contesto grezzo più vicino o direttamente collegato: segmento transcript, frame, OCR del frame, blocchi codice vicini, chunk e sezioni Markdown che citano quel range. `--video` accetta id video, nome file o stem del nome file; se il progetto contiene un solo video può essere omesso.
+**Exit code:** 0 = contesto stampato. 1 = progetto sconosciuto, `config.yaml` non valido, nessun video registrato, timestamp non valido, selettore video mancante/ambiguo/sconosciuto, o problema strutturale su `project.db`.
+**Esempio:**
+```
+$ videodoc inspect corso-software-x --video workshop_01.mp4 --timestamp 00:21:04
+Project: corso-software-x
++--------------------+--------------------------------------------------+
+| Video              | workshop_01.mp4 (workshop_01)                  |
+| Timestamp          | 00:21:04                                        |
+| Transcript         | 00:21:00-00:21:10, confidence 0.94: Ora lanciamo il comando... |
+| Frame              | workdir/workshop_01/frames/frame_0042.jpg @00:21:04 (distance 0.0s) |
+| OCR                | npm create vite@latest my-app (confidence 0.91) |
+| Chunk              | workshop_01_chunk_0008 00:20:30-00:22:00 Installazione |
+| Documentation hits | 1                                                |
++--------------------+--------------------------------------------------+
+Detected code:
+- workshop_01_code_0003 bash @00:21:04 distance=0.0s
+  npm create vite@latest my-app
+Documentation:
+- docs/03-installazione.md [2] Installazione 00:20:30-00:22:00 Installazione
+```
+**Vedi anche:** [features/status-inspect.md](features/status-inspect.md)
+
+---
+
 ## outline
 
 **Sintassi:** `videodoc outline <project> [--force]`

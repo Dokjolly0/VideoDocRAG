@@ -1080,6 +1080,8 @@ Indexed: yes
 Documentation generated: partial
 ```
 
+Nota implementativa: il comando **`videodoc status`** è implementato sopra `PipelineStatusService`. La lettura è non distruttiva: se `project.db` non esiste, il comando non lo crea. Lo stato combina `sources.yaml`, manifest e file in `workdir/`, tabelle SQLite già presenti, indici in `indexes/`, documentazione in `docs/`, export in `exports/` e chat salvate. Gli indici presenti ma corrotti vengono segnalati come warning invece che conteggiati come validi. Vedi `docs/features/status-inspect.md`.
+
 ## 12.3 Comando inspect
 
 Permette di ispezionare un timestamp specifico:
@@ -1098,6 +1100,8 @@ OCR: npm create vite@latest my-app
 Detected code: npm create vite@latest my-app
 Frame: workdir/workshop_01_installazione/frames/frame_0042.jpg
 ```
+
+Nota implementativa: il comando **`videodoc inspect`** è implementato sopra `TimestampInspectionService`. Il timecode usa lo stesso parser di `ask`/`chat` (`HH:MM:SS` o `MM:SS`); `--video` accetta id video, filename o stem ed è obbligatorio quando il progetto contiene più video. Il servizio mostra segmento transcript, frame/OCR, blocchi codice temporizzati, chunk e sezioni Markdown i cui manifest fonti coprono il timestamp richiesto. Vedi `docs/features/status-inspect.md`.
 
 ## 12.4 Regola di implementazione CLI
 
@@ -3003,6 +3007,8 @@ Mostra fonti grezze collegate a un timestamp.
 videodoc inspect corso-software-x --video workshop_03.mp4 --timestamp 00:14:20
 ```
 
+Nota implementativa: questa modalità è disponibile dal comando **`videodoc inspect`**, che legge `project.db` e `docs/sources/*.sources.json` senza modificare lo stato del progetto. Vedi `docs/features/status-inspect.md`.
+
 ## 35.5 Modalità GUI
 
 Avvia l’interfaccia web.
@@ -3045,8 +3051,8 @@ Funzioni:
 - modulo `cli`;
 - comandi Typer;
 - `init`, `ingest`, `transcribe`, `chunk`, `generate`;
-- comando `status`;
-- comando `inspect`.
+- comando `status` (implementato);
+- comando `inspect` (implementato).
 
 ## 36.3 MVP 3 — OCR e codice
 
