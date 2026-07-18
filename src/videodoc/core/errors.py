@@ -60,6 +60,10 @@ class InvalidOCRManifestError(VideoDocError):
     """Raised when a video's ocr.json manifest is missing, malformed, or fails validation."""
 
 
+class InvalidCodeManifestError(VideoDocError):
+    """Raised when a video's code extraction manifest is missing, malformed, or fails validation."""
+
+
 class OCREngineUnavailableError(VideoDocError):
     """Raised once, up front, when at least one video needs fresh OCR but the 'rapidocr'
     package cannot be imported -- checked a single time per run rather than once per frame.

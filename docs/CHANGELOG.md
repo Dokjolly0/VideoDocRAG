@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Code extraction from OCR
+- Added `videodoc code`: for every video with OCR already present, classifies OCR text, extracts code-like blocks, deduplicates repeated blocks across frames, writes `workdir/<id>/code/<id>.json`, replaces the video's rows in `project.db`'s new `code_blocks` table, updates only `frames.contains_code`, and writes `workdir/<id>/code/code_review_report.md` for blocks that need human review — see [features/code-extraction.md](features/code-extraction.md).
+- Added deterministic OCR-code classification and validation in `core/utils/code_detection.py`: parser-backed validation for JSON/YAML/Python; simple rule verification for terminal commands, file paths, and error messages; conservative classification for JavaScript/TypeScript/HTML/CSS/SQL/Dockerfile, marked for review in strict mode until parser-specific validation exists.
+- Added `core/models/code_manifest.py` with full input-frame signatures (`frame_id`, timestamp, perceptual hash, OCR text hash, OCR confidence), so a `videodoc frames` or `videodoc ocr` rerun cannot silently reuse code blocks extracted from stale OCR.
+- Added `replace_code_blocks()`/`list_code_blocks()` and `replace_frame_code_flags()` to `core/storage/database.py`; the latter rewrites only `contains_code` and deliberately leaves `ocr_text`/`ocr_confidence`/`perceptual_hash` untouched.
+- Added tests for classification, manifest roundtrip/validation, database helpers, `CodeService` idempotency/self-heal/reprocessing/review-report behavior, and CLI wiring through a stubbed `init -> ingest -> frames -> ocr -> code` flow.
+- Docs: README §20, `docs/commands.md`, `RUN.md`, and OCR/frame feature notes now describe `videodoc code` as the implemented owner of `contains_code`.
+
 ## Unreleased — Transcription throughput optimization
 - Replaced PySceneDetect in `videodoc frames` with FFmpeg scene detection (`select=gt(scene\,threshold)`), removing the Python scene-detection dependency and keeping scene failures as per-video warnings.
 - Added `frames.scene_threshold` / `--scene-threshold` as a semantic frame-selection setting stored in `frames.json`; legacy manifests without it are re-extracted once when scene detection is enabled.

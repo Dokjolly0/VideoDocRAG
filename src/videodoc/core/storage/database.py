@@ -42,9 +42,9 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
 
 # README §31/§30.3 -- ocr_text/ocr_confidence are filled in by OCRService
 # (README §19, via update_frame_ocr -- a partial UPDATE, not replace_frames)
-# once 'videodoc ocr' runs; contains_code stays 0 until the not-yet-
-# implemented code-detection phase (§20) fills it in. FrameExtractionService
-# (this table's INSERT writer, via replace_frames) only ever populates
+# once 'videodoc ocr' runs; contains_code stays 0 until the code-detection
+# phase (§20, videodoc code) fills it in. FrameExtractionService (this table's
+# INSERT writer, via replace_frames) only ever populates
 # id/video_id/timestamp_seconds/image_path/perceptual_hash, leaving the rest
 # at their column defaults.
 _CREATE_FRAMES_TABLE = """
@@ -57,6 +57,21 @@ CREATE TABLE IF NOT EXISTS frames (
     ocr_text TEXT,
     ocr_confidence REAL,
     contains_code INTEGER DEFAULT 0,
+    FOREIGN KEY(video_id) REFERENCES videos(id)
+);
+"""
+
+_CREATE_CODE_BLOCKS_TABLE = """
+CREATE TABLE IF NOT EXISTS code_blocks (
+    id TEXT PRIMARY KEY,
+    video_id TEXT NOT NULL,
+    chunk_id TEXT,
+    timestamp_seconds REAL,
+    language TEXT,
+    code TEXT NOT NULL,
+    source TEXT,
+    confidence REAL,
+    verified INTEGER DEFAULT 0,
     FOREIGN KEY(video_id) REFERENCES videos(id)
 );
 """
@@ -117,7 +132,7 @@ class FrameRow:
     perceptual_hash: str | None
     ocr_text: str | None = None  # filled by the OCR phase (README §19)
     ocr_confidence: float | None = None  # filled by the OCR phase (README §19)
-    contains_code: bool = False  # filled by a later phase (README §20)
+    contains_code: bool = False  # filled by videodoc code (README §20)
 
 
 @dataclass(frozen=True)
@@ -125,6 +140,19 @@ class FrameOcrUpdate:
     frame_id: str
     ocr_text: str | None
     ocr_confidence: float | None
+
+
+@dataclass(frozen=True)
+class CodeBlockRow:
+    id: str
+    video_id: str
+    chunk_id: str | None
+    timestamp_seconds: float | None
+    language: str | None
+    code: str
+    source: str | None
+    confidence: float | None
+    verified: bool = False
 
 
 def ensure_schema(db_path: Path) -> None:
@@ -141,6 +169,7 @@ def ensure_schema(db_path: Path) -> None:
             _ensure_videos_columns(conn)
             conn.execute(_CREATE_TRANSCRIPT_SEGMENTS_TABLE)
             conn.execute(_CREATE_FRAMES_TABLE)
+            conn.execute(_CREATE_CODE_BLOCKS_TABLE)
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot initialize schema in {db_path}: {exc}") from exc
 
@@ -343,7 +372,7 @@ def update_frame_ocr(db_path: Path, video_id: str, updates: list[FrameOcrUpdate]
     in one transaction -- deliberately NOT replace_frames, which would
     require reconstructing perceptual_hash/contains_code for every row just
     to avoid clobbering them, and could wipe a contains_code already set by a
-    future §20 code-detection run that hasn't re-run yet. video_id is used in
+    §20 code-detection run that hasn't re-run yet. video_id is used in
     the WHERE clause defensively (frame ids are already globally unique
     across the whole project.db, mirroring FrameRow.id's own comment)."""
     try:
@@ -361,3 +390,70 @@ def update_frame_ocr(db_path: Path, video_id: str, updates: list[FrameOcrUpdate]
             )
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot update OCR results for video '{video_id}' in {db_path}: {exc}") from exc
+
+
+def replace_frame_code_flags(db_path: Path, video_id: str, frame_ids: set[str]) -> None:
+    """Replace ONLY frames.contains_code for one video.
+
+    This is the code-detection equivalent of update_frame_ocr(): it must not
+    rewrite full frame rows, because that would risk clobbering OCR text,
+    OCR confidence, or perceptual hashes owned by earlier phases. A full
+    replace of the boolean flag is intentional, though: if OCR/code
+    detection changes its mind on a later rerun, stale true flags must be
+    cleared as well as new ones set.
+    """
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.execute("UPDATE frames SET contains_code = 0 WHERE video_id = ?", (video_id,))
+            if frame_ids:
+                conn.executemany(
+                    "UPDATE frames SET contains_code = 1 WHERE id = :id AND video_id = :video_id",
+                    [{"id": frame_id, "video_id": video_id} for frame_id in sorted(frame_ids)],
+                )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot update code flags for video '{video_id}' in {db_path}: {exc}") from exc
+
+
+def replace_code_blocks(db_path: Path, video_id: str, blocks: list[CodeBlockRow]) -> None:
+    """Full replace of deduplicated OCR code blocks for one video."""
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.execute("DELETE FROM code_blocks WHERE video_id = ?", (video_id,))
+            conn.executemany(
+                "INSERT INTO code_blocks (id, video_id, chunk_id, timestamp_seconds, language, code, source, confidence, verified) "
+                "VALUES (:id, :video_id, :chunk_id, :timestamp_seconds, :language, :code, :source, :confidence, :verified)",
+                [
+                    {
+                        "id": b.id,
+                        "video_id": b.video_id,
+                        "chunk_id": b.chunk_id,
+                        "timestamp_seconds": b.timestamp_seconds,
+                        "language": b.language,
+                        "code": b.code,
+                        "source": b.source,
+                        "confidence": b.confidence,
+                        "verified": int(b.verified),
+                    }
+                    for b in blocks
+                ],
+            )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot write code blocks for video '{video_id}' to {db_path}: {exc}") from exc
+
+
+def list_code_blocks(db_path: Path, video_id: str) -> list[CodeBlockRow]:
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            table_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='code_blocks'"
+            ).fetchone()
+            if table_exists is None:
+                return []
+            rows = conn.execute(
+                "SELECT id, video_id, chunk_id, timestamp_seconds, language, code, source, confidence, verified "
+                "FROM code_blocks WHERE video_id = ? ORDER BY id",
+                (video_id,),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot list code blocks for video '{video_id}' in {db_path}: {exc}") from exc
+    return [CodeBlockRow(*row[:8], verified=bool(row[8])) for row in rows]

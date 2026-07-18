@@ -227,7 +227,7 @@ Project: corso-software-x
 ## ocr
 
 **Sintassi:** `videodoc ocr <project> [--workers N] [--language LANG]... [--min-confidence N]`
-**Descrizione:** Per ogni video con frame già estratti (`videodoc frames`), esegue l'OCR (motore RapidOCR) su ogni immagine frame, registra il testo riconosciuto e la relativa confidenza in `workdir/<id>/ocr/<id>.json` e nelle colonne `ocr_text`/`ocr_confidence` della tabella `frames` di `project.db`, aggiornando `metadata.json` (`ocr_path`). Non tocca mai `contains_code`/`perceptual_hash` (riservate rispettivamente alla fase §20, non ancora implementata, e alla fase frame). Idempotente per **due** condizioni indipendenti: le impostazioni effettive salvate in `ocr.json` (`engine`/`languages`/`min_confidence`) devono coincidere con quelle correnti, **e** l'insieme di frame-id correnti deve coincidere con quello registrato nel manifest — un video con frame senza `videodoc frames` mai eseguito viene saltato silenziosamente (non è un errore). Un testo riconosciuto con confidenza sotto `min_confidence` viene comunque registrato (testo vuoto, confidenza reale conservata), per distinguere "OCR eseguito ma rumore" da "OCR mai eseguito" (quest'ultimo resta `NULL`).
+**Descrizione:** Per ogni video con frame già estratti (`videodoc frames`), esegue l'OCR (motore RapidOCR) su ogni immagine frame, registra il testo riconosciuto e la relativa confidenza in `workdir/<id>/ocr/<id>.json` e nelle colonne `ocr_text`/`ocr_confidence` della tabella `frames` di `project.db`, aggiornando `metadata.json` (`ocr_path`). Non tocca mai `contains_code`/`perceptual_hash` (riservate rispettivamente a `videodoc code` e alla fase frame). Idempotente per **due** condizioni indipendenti: le impostazioni effettive salvate in `ocr.json` (`engine`/`languages`/`min_confidence`) devono coincidere con quelle correnti, **e** l'insieme di frame-id correnti deve coincidere con quello registrato nel manifest — un video con frame senza `videodoc frames` mai eseguito viene saltato silenziosamente (non è un errore). Un testo riconosciuto con confidenza sotto `min_confidence` viene comunque registrato (testo vuoto, confidenza reale conservata), per distinguere "OCR eseguito ma rumore" da "OCR mai eseguito" (quest'ultimo resta `NULL`).
 **Exit code:** 0 = successo, anche con errori per-frame/per-video (OCR fallito su una singola immagine: stampati come `Warning`, il frame viene saltato e ritentato al run successivo, gli altri continuano). 1 = progetto sconosciuto, `config.yaml` non valido, **nessun video ancora registrato** (`ingest` mai eseguito), il pacchetto `rapidocr` non disponibile quando almeno un video richiede un OCR fresco, o problema strutturale su `project.db`.
 **Prerequisito:** richiede i pacchetti Python `rapidocr` e `onnxruntime` (installati automaticamente come dipendenze del progetto, nessun binario di sistema) — ma solo per i video che effettivamente necessitano di un nuovo OCR. Il modello di riconoscimento di default gestisce correttamente anche l'italiano su testo a schermo di qualità realistica (verificato); `--language` è al momento solo informativo (registrato per l'idempotenza, non seleziona un modello diverso).
 **Esempio:**
@@ -247,6 +247,32 @@ Project: corso-software-x
 +---------------+
 ```
 **Vedi anche:** [features/ocr.md](features/ocr.md)
+
+---
+
+## code
+
+**Sintassi:** `videodoc code <project> [--workers N]`
+**Descrizione:** Per ogni video con OCR già presente, classifica il testo dei frame in `plain_text`, `terminal_command`, `source_code`, `configuration`, `error_message`, `file_path` o `ui_label`; salva solo i blocchi code-like deduplicati in `workdir/<id>/code/<id>.json` e nella tabella `code_blocks`, aggiorna solo `frames.contains_code`, e rigenera `workdir/<id>/code/code_review_report.md` per i blocchi che richiedono controllo umano. JSON/YAML/Python vengono validati con parser reali; comandi, path ed errori usano regole deterministiche; altri linguaggi vengono classificati ma marcati per revisione in strict mode.
+**Exit code:** 0 = successo, anche con errori per-video (manifest codice corrotto su un singolo video: stampato come `Warning`, gli altri continuano). 1 = progetto sconosciuto, `config.yaml` non valido, nessun video ancora registrato (`ingest` mai eseguito), o problema strutturale su `project.db`.
+**Prerequisito:** richiede `videodoc ocr` per produrre input utili, ma non carica RapidOCR e non rilegge immagini; un video senza frame o senza OCR viene saltato silenziosamente. L'idempotenza confronta impostazioni `code.*` e firma completa degli input OCR (`frame_id`, timestamp, hash percettivo, hash del testo OCR e confidenza), quindi cambi di frame o OCR innescano una nuova analisi.
+**Esempio:**
+```
+$ videodoc code corso-software-x
+Project: corso-software-x
++---------------+
+| Processed | 8 |
+| Skipped   | 0 |
++---------------+
+
+$ videodoc code corso-software-x
+Project: corso-software-x
++---------------+
+| Processed | 0 |
+| Skipped   | 8 |
++---------------+
+```
+**Vedi anche:** [features/code-extraction.md](features/code-extraction.md)
 
 ---
 

@@ -463,7 +463,7 @@ Project: corso-software-x
 +---------------+
 ```
 
-Non modifica mai `contains_code`/`perceptual_hash`: `contains_code` resta riservato alla fase di riconoscimento del codice (README §20), non ancora implementata.
+Non modifica mai `contains_code`/`perceptual_hash`: `contains_code` resta riservato alla fase di riconoscimento del codice (`videodoc code`, README §20).
 
 È idempotente per **due** condizioni indipendenti: le impostazioni effettive salvate in `ocr.json` (motore, lingue, soglia di confidenza) devono coincidere con quelle correnti, **e** l'insieme di frame-id correnti (dalla tabella `frames`) deve coincidere con quello registrato nel manifest. Questa seconda condizione è specifica di questa fase: se `videodoc frames` viene rieseguito producendo un insieme di frame diverso (es. un `--interval-seconds` più stretto), il video viene sottoposto di nuovo a OCR anche se nessuna impostazione OCR è cambiata:
 
@@ -483,7 +483,43 @@ Un video con frame di cui non è mai stato eseguito `videodoc frames` (o che ne 
 
 `rapidocr`/`onnxruntime` sono installati automaticamente come dipendenze del progetto (nessun passo manuale, a differenza di FFmpeg) e vengono richiesti solo se **almeno un video** necessita davvero di un nuovo OCR: un progetto già completamente processato può essere rilanciato per autoripararsi anche su una macchina priva di `rapidocr`. Se nessun video è ancora stato registrato, o se il pacchetto `rapidocr` non è installato quando serve, il comando fallisce subito (`exit code` 1). Un fallimento OCR su un singolo frame non blocca gli altri: viene segnalato con un `Warning`, quel frame viene ritentato al run successivo.
 
-### 5.12 Verificare lo stato dell'ambiente (`doctor`)
+### 5.12 Riconoscere ed estrarre il codice dall'OCR
+
+Per ogni video con risultati OCR già presenti, classifica il testo dei frame, identifica comandi, sorgenti, configurazioni, errori e path, deduplica i blocchi uguali e li registra in `workdir/<id>/code/<id>.json`, nella tabella `code_blocks` di `project.db` e nel flag `frames.contains_code`:
+
+```bash
+videodoc code corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Processed | 8 |
+| Skipped   | 0 |
++---------------+
+```
+
+Il comando non rilegge immagini e non richiama RapidOCR: usa solo `ocr_text`/`ocr_confidence` già salvati da `videodoc ocr`. Un video senza frame o senza OCR viene saltato senza errore. Ogni run fresco scrive anche `workdir/<id>/code/code_review_report.md`, con i blocchi che richiedono controllo umano perché la confidenza OCR è bassa, perché la validazione è fallita o perché il blocco non è verificabile in strict mode.
+
+La validazione è conservativa: JSON, YAML e Python usano parser reali; comandi terminale, path ed errori sono verificati tramite regole deterministiche; JavaScript/TypeScript/HTML/CSS/SQL/Dockerfile vengono classificati, ma marcati per revisione quando non esiste ancora un parser dedicato. I blocchi ripetuti in più frame vengono salvati una sola volta, mantenendo però tutti i frame sorgente e i timestamp.
+
+È idempotente sugli input OCR: se `videodoc ocr` o `videodoc frames` cambiano testo, confidenza, timestamp o hash percettivo, il video viene rianalizzato; se nulla cambia, `videodoc code` salta l'analisi e autoripara comunque `code_blocks`, `contains_code` e il report dal manifest.
+
+```bash
+videodoc code corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Processed | 0 |
+| Skipped   | 8 |
++---------------+
+```
+
+Se nessun video è ancora stato registrato (`ingest` non è mai stato eseguito), o se c'è un problema strutturale su `project.db`, il comando fallisce con `exit code` 1. Problemi per-video su manifest codice corrotti vengono stampati come `Warning` e non bloccano gli altri video.
+
+### 5.13 Verificare lo stato dell'ambiente (`doctor`)
 
 Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
 
@@ -505,7 +541,7 @@ Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode —
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
-### 5.13 Applicare le correzioni automaticamente (`setup`)
+### 5.14 Applicare le correzioni automaticamente (`setup`)
 
 Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
 
@@ -654,7 +690,7 @@ Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.all
 FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
 
 **`videodoc transcribe` fallisce con un errore che menziona `cublas` o una libreria CUDA mancante.**
-Esegui prima `videodoc doctor` (§5.11): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.12) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
+Esegui prima `videodoc doctor` (§5.13): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.14) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
 
 `faster-whisper` rileva automaticamente l'hardware disponibile e, su una macchina dove viene individuata una GPU ma mancano le librerie runtime CUDA (es. `cublas64_12.dll` su Windows), fallisce invece di ripiegare in modo pulito sulla CPU. **Dove esattamente fallisce cambia il comportamento del comando**, e dipende da un dettaglio interno di `faster-whisper`/`ctranslate2` non controllabile da questo codice:
 - Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.

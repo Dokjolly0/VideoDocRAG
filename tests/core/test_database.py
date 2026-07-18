@@ -6,15 +6,19 @@ import pytest
 
 from videodoc.core.errors import DatabaseError
 from videodoc.core.storage.database import (
+    CodeBlockRow,
     FrameOcrUpdate,
     FrameRow,
     TranscriptSegmentRow,
     VideoRow,
     ensure_schema,
     get_video,
+    list_code_blocks,
     list_frames,
     list_transcript_segments,
     list_videos,
+    replace_code_blocks,
+    replace_frame_code_flags,
     replace_frames,
     replace_transcript_segments,
     update_frame_ocr,
@@ -311,7 +315,7 @@ def test_replace_frames_inserts_with_ocr_fields_defaulted(tmp_path):
 
     rows = _fetch_frames(db_path, "demo")
     assert [r[0] for r in rows] == ["demo_frame_0000", "demo_frame_0001"]
-    # ocr_text/ocr_confidence stay NULL and contains_code stays 0 until a later phase (README §19/§20)
+    # ocr_text/ocr_confidence stay NULL until OCR; contains_code stays 0 until videodoc code.
     assert rows[0][5] is None
     assert rows[0][6] is None
     assert rows[0][7] == 0
@@ -362,7 +366,7 @@ def test_update_frame_ocr_updates_only_ocr_columns(tmp_path):
     upsert_video(db_path, _row())
     replace_frames(db_path, "demo", [_frame(perceptual_hash="original-hash")])
     # Seed contains_code=True directly, since replace_frames' own FrameRow
-    # default is False -- simulates a future §20 code-detection run having
+    # default is False -- simulates a §20 code-detection run having
     # already set it, which update_frame_ocr must never clobber.
     with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("UPDATE frames SET contains_code = 1 WHERE id = ?", ("demo_frame_0000",))
@@ -381,3 +385,103 @@ def test_update_frame_ocr_wraps_sqlite_error(tmp_path):
     db_path.mkdir()
     with pytest.raises(DatabaseError):
         update_frame_ocr(db_path, "demo", [FrameOcrUpdate(frame_id="demo_frame_0000", ocr_text="x", ocr_confidence=0.5)])
+
+
+def test_replace_frame_code_flags_updates_only_contains_code(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_frames(db_path, "demo", [
+        _frame(id="demo_frame_0000", ocr_text="npm run dev", ocr_confidence=0.9, perceptual_hash="h1"),
+        _frame(id="demo_frame_0001", ocr_text="plain text", ocr_confidence=0.8, perceptual_hash="h2"),
+    ])
+
+    replace_frame_code_flags(db_path, "demo", {"demo_frame_0000"})
+
+    rows = _fetch_frames(db_path, "demo")
+    assert rows[0][4] == "h1"
+    assert rows[0][5] == "npm run dev"
+    assert rows[0][6] == 0.9
+    assert rows[0][7] == 1
+    assert rows[1][5] == "plain text"
+    assert rows[1][7] == 0
+
+
+def test_replace_frame_code_flags_clears_stale_true_flags(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_frames(db_path, "demo", [_frame(), _frame(id="demo_frame_0001")])
+    replace_frame_code_flags(db_path, "demo", {"demo_frame_0000", "demo_frame_0001"})
+    replace_frame_code_flags(db_path, "demo", {"demo_frame_0001"})
+
+    rows = _fetch_frames(db_path, "demo")
+    assert [row[7] for row in rows] == [0, 1]
+
+
+def test_replace_and_list_code_blocks_roundtrip(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_code_blocks(
+        db_path,
+        "demo",
+        [
+            CodeBlockRow(
+                id="demo_code_0001",
+                video_id="demo",
+                chunk_id=None,
+                timestamp_seconds=8.0,
+                language="bash",
+                code="npm run dev",
+                source="ocr",
+                confidence=0.91,
+                verified=True,
+            )
+        ],
+    )
+
+    rows = list_code_blocks(db_path, "demo")
+    assert rows == [
+        CodeBlockRow(
+            id="demo_code_0001",
+            video_id="demo",
+            chunk_id=None,
+            timestamp_seconds=8.0,
+            language="bash",
+            code="npm run dev",
+            source="ocr",
+            confidence=0.91,
+            verified=True,
+        )
+    ]
+
+
+def test_replace_code_blocks_replaces_not_appends(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_code_blocks(
+        db_path,
+        "demo",
+        [CodeBlockRow("demo_code_0001", "demo", None, 8.0, "bash", "npm run dev", "ocr", 0.9, True)],
+    )
+    replace_code_blocks(
+        db_path,
+        "demo",
+        [CodeBlockRow("demo_code_0002", "demo", None, 16.0, "python", "print('ok')", "ocr", 0.95, True)],
+    )
+
+    rows = list_code_blocks(db_path, "demo")
+    assert [row.id for row in rows] == ["demo_code_0002"]
+
+
+def test_code_block_helpers_wrap_sqlite_errors(tmp_path):
+    db_path = tmp_path / "not-a-file"
+    db_path.mkdir()
+    with pytest.raises(DatabaseError):
+        replace_frame_code_flags(db_path, "demo", {"demo_frame_0000"})
+    with pytest.raises(DatabaseError):
+        replace_code_blocks(db_path, "demo", [])
+    with pytest.raises(DatabaseError):
+        list_code_blocks(db_path, "demo")

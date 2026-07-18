@@ -5,7 +5,7 @@
 
 It is idempotent by semantic settings, not just by file presence: an existing `frames.json` is skipped only when its effective `interval_seconds`/`scene_detection`/`keyword_boost` match the current run, and when scene detection is enabled its stored `scene_threshold` also matches. `hwaccel` is deliberately not stored or compared because it only changes performance, not selected timestamps.
 
-Only `id`/`video_id`/`timestamp_seconds`/`image_path`/`perceptual_hash` are populated by this phase. `ocr_text`/`ocr_confidence` stay `NULL` until `videodoc ocr` runs; `contains_code` stays `0` until the future code-detection phase fills it in.
+Only `id`/`video_id`/`timestamp_seconds`/`image_path`/`perceptual_hash` are populated by this phase. `ocr_text`/`ocr_confidence` stay `NULL` until `videodoc ocr` runs; `contains_code` stays `0` until `videodoc code` fills it in.
 
 ## Timestamp selection
 Three signals feed into one merged, deduplicated timestamp list per video (`core/utils/frame_selection.py::select_frame_timestamps`):

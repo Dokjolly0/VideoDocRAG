@@ -141,7 +141,7 @@ def test_fresh_ocr_writes_manifest_and_db_without_touching_other_columns(tmp_pat
     _seed_frames(project_dir, config, count=2)
     db_path = project_dir / config.paths.database
 
-    # Simulate a future §20 code-detection run having already set
+    # Simulate a §20 code-detection run having already set
     # contains_code -- OCRService must never touch it.
     with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("UPDATE frames SET contains_code = 1 WHERE id = ?", ("demo_frame_0001",))
