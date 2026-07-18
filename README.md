@@ -2433,6 +2433,8 @@ Non ho trovato nelle fonti del progetto una procedura completa per configurare R
 Le fonti recuperate citano Redis solo brevemente nel video `workshop_04_cache.mp4` al timestamp `00:32:10`, ma non mostrano i comandi di configurazione.
 ```
 
+Nota implementativa: questa fase è implementata dai comandi **`videodoc ask`** e **`videodoc chat`**. `ask` supporta `--source docs|raw|hybrid`, filtri `--video`, `--from`, `--to` e usa la documentazione generata come fonte predefinita indicizzandola in `indexes/documentation_index.json` con `source_type = generated_documentation`; se i Markdown non esistono ancora ma l'indice raw c'è, mantiene interrogabile la pipeline usando i chunk originali. `chat` salva sessioni in `project.db` (`chat_sessions`, `chat_messages`) e in `sessions/<session_id>.json`, includendo la cronologia recente nelle domande successive. Le risposte restano estrattive e locali, con regola anti-allucinazione: se le fonti non supportano una risposta, lo dichiarano. Vedi `docs/features/chat.md`.
+
 ---
 
 # 30. Configurazione del progetto

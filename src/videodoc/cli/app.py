@@ -2,6 +2,7 @@ import typer
 
 from videodoc.cli.commands import (
     ask,
+    chat,
     chunk,
     code,
     doctor,
@@ -42,6 +43,7 @@ app.command("chunk")(chunk.chunk_command)
 app.command("embed")(embed.embed_command)
 app.command("index")(index.index_command)
 app.command("ask")(ask.ask_command)
+app.command("chat")(chat.chat_command)
 app.command("outline")(outline.outline_command)
 app.command("generate")(generate.generate_command)
 app.command("review")(review.review_command)

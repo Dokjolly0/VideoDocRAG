@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Chat and filtered retrieval
+- Added `videodoc chat`: saved chat sessions with `project.db` rows and `sessions/<session_id>.json` snapshots — see [features/chat.md](features/chat.md).
+- Extended `videodoc ask` with `--source docs|raw|hybrid`, repeated `--video`, `--from`, `--to`, and source-aware output.
+- Added documentation indexing for generated Markdown sections at `indexes/documentation_index.json` with `source_type=generated_documentation` and linked video/timestamp payloads.
+- Added filtered retrieval over generated docs, raw chunks, or hybrid sources, plus recent-session history in follow-up queries.
+- Added chat/session models, database chat tables/helpers, service tests, CLI tests, and storage tests.
+- Docs: README §29, `docs/commands.md`, `RUN.md`, and `docs/features/chat.md` now document chat and filtered ask.
+
 ## Unreleased — Documentation export
 - Added `videodoc export --format markdown|mkdocs|docusaurus|github-pages|pdf|html`: packages generated docs into local `exports/<format>/` folders — see [features/documentation-export.md](features/documentation-export.md).
 - Added dependency-free exporters for Markdown folders, MkDocs, Docusaurus, static HTML/GitHub Pages and a simple text PDF.

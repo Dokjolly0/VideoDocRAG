@@ -91,6 +91,28 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 """
 
+_CREATE_CHAT_SESSIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    default_source TEXT DEFAULT 'docs',
+    created_at TEXT,
+    updated_at TEXT
+);
+"""
+
+_CREATE_CHAT_MESSAGES_TABLE = """
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    sources_json TEXT,
+    created_at TEXT,
+    FOREIGN KEY(session_id) REFERENCES chat_sessions(id)
+);
+"""
+
 
 def _connect(db_path: Path) -> sqlite3.Connection:
     return sqlite3.connect(db_path, timeout=30)
@@ -183,6 +205,25 @@ class ChunkRow:
     metadata_json: str | None
 
 
+@dataclass(frozen=True)
+class ChatSessionRow:
+    id: str
+    title: str | None
+    default_source: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class ChatMessageRow:
+    id: str
+    session_id: str
+    role: str
+    content: str
+    sources_json: str | None
+    created_at: str
+
+
 def ensure_schema(db_path: Path) -> None:
     """Create every project.db table if it doesn't exist yet. Idempotent."""
     try:
@@ -199,6 +240,8 @@ def ensure_schema(db_path: Path) -> None:
             conn.execute(_CREATE_FRAMES_TABLE)
             conn.execute(_CREATE_CODE_BLOCKS_TABLE)
             conn.execute(_CREATE_CHUNKS_TABLE)
+            conn.execute(_CREATE_CHAT_SESSIONS_TABLE)
+            conn.execute(_CREATE_CHAT_MESSAGES_TABLE)
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot initialize schema in {db_path}: {exc}") from exc
 
@@ -531,3 +574,82 @@ def list_chunks(db_path: Path, video_id: str) -> list[ChunkRow]:
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot list chunks for video '{video_id}' in {db_path}: {exc}") from exc
     return [ChunkRow(*row) for row in rows]
+
+
+def upsert_chat_session(db_path: Path, row: ChatSessionRow) -> None:
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO chat_sessions (id, title, default_source, created_at, updated_at)
+                VALUES (:id, :title, :default_source, :created_at, :updated_at)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = COALESCE(excluded.title, chat_sessions.title),
+                    default_source = excluded.default_source,
+                    updated_at = excluded.updated_at
+                """,
+                {
+                    "id": row.id,
+                    "title": row.title,
+                    "default_source": row.default_source,
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                },
+            )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot write chat session '{row.id}' to {db_path}: {exc}") from exc
+
+
+def insert_chat_message(db_path: Path, row: ChatMessageRow) -> None:
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO chat_messages (id, session_id, role, content, sources_json, created_at)
+                VALUES (:id, :session_id, :role, :content, :sources_json, :created_at)
+                """,
+                {
+                    "id": row.id,
+                    "session_id": row.session_id,
+                    "role": row.role,
+                    "content": row.content,
+                    "sources_json": row.sources_json,
+                    "created_at": row.created_at,
+                },
+            )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot write chat message '{row.id}' to {db_path}: {exc}") from exc
+
+
+def list_chat_messages(db_path: Path, session_id: str) -> list[ChatMessageRow]:
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            table_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_messages'"
+            ).fetchone()
+            if table_exists is None:
+                return []
+            rows = conn.execute(
+                "SELECT id, session_id, role, content, sources_json, created_at "
+                "FROM chat_messages WHERE session_id = ? ORDER BY created_at, id",
+                (session_id,),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot list chat messages for session '{session_id}' in {db_path}: {exc}") from exc
+    return [ChatMessageRow(*row) for row in rows]
+
+
+def list_chat_sessions(db_path: Path) -> list[ChatSessionRow]:
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            table_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_sessions'"
+            ).fetchone()
+            if table_exists is None:
+                return []
+            rows = conn.execute(
+                "SELECT id, title, default_source, created_at, updated_at FROM chat_sessions ORDER BY updated_at DESC, id"
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot list chat sessions in {db_path}: {exc}") from exc
+    return [ChatSessionRow(*row) for row in rows]

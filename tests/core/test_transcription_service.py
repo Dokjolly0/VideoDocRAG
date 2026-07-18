@@ -451,6 +451,8 @@ def test_transcribes_against_pre_existing_db_missing_transcript_segments_table(t
         conn.execute("DROP TABLE frames")
         conn.execute("DROP TABLE code_blocks")
         conn.execute("DROP TABLE chunks")
+        conn.execute("DROP TABLE chat_sessions")
+        conn.execute("DROP TABLE chat_messages")
         tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     assert {t[0] for t in tables} == {"videos"}  # confirms the simulated pre-existing state
 

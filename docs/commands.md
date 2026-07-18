@@ -360,10 +360,10 @@ Project: corso-software-x
 
 ## ask
 
-**Sintassi:** `videodoc ask <project> "domanda" [--top-k N]`
-**Descrizione:** Interroga l'indice vettoriale locale `indexes/vector_index.json`: crea l'embedding della domanda con lo stesso backend locale (`feature-hashing`), cerca per cosine similarity, deduplica i record che puntano allo stesso chunk e stampa una risposta estrattiva basata solo sugli estratti recuperati, con fonti numerate.
-**Exit code:** 0 = risposta prodotta o nessuna fonte sufficiente trovata. 1 = progetto sconosciuto, `config.yaml` non valido, indice mancante (`run 'videodoc index' first`), indice corrotto/non ricercabile localmente, o domanda vuota.
-**Prerequisito:** richiede `videodoc index` dopo `videodoc embed`. Non chiama ancora un LLM esterno: se le fonti indicizzate non contengono una procedura o spiegazione, il comando lo dichiara invece di inventarla.
+**Sintassi:** `videodoc ask <project> "domanda" [--source docs|raw|hybrid] [--video NAME]... [--from HH:MM:SS] [--to HH:MM:SS] [--top-k N]`
+**Descrizione:** Interroga la knowledge base in modalità one-shot. `--source docs` (default) usa la documentazione generata indicizzata in `indexes/documentation_index.json`; `raw` usa `indexes/vector_index.json`; `hybrid` combina entrambe. I filtri `--video`, `--from` e `--to` limitano le fonti recuperate. La risposta resta estrattiva e cita solo fonti recuperate.
+**Exit code:** 0 = risposta prodotta o nessuna fonte sufficiente trovata. 1 = progetto sconosciuto, `config.yaml` non valido, indici mancanti (`run 'videodoc generate'`/`index` first), indice corrotto/non ricercabile localmente, timecode non valido, fonte non valida, o domanda vuota.
+**Prerequisito:** per `docs` servono sezioni generate; per `raw` serve `videodoc index`. Se `docs` non ha ancora sezioni ma esiste l'indice raw, `ask` usa automaticamente le fonti raw per mantenere interrogabile una pipeline parziale.
 **Esempio:**
 ```
 $ videodoc ask corso-software-x "Come si configura il database?" --top-k 3
@@ -376,6 +376,27 @@ Sources:
     La configurazione del database viene mostrata nel file config.yaml ...
 ```
 **Vedi anche:** [features/retrieval-rag.md](features/retrieval-rag.md)
+
+---
+
+## chat
+
+**Sintassi:** `videodoc chat <project> [--message "domanda"] [--session ID] [--source docs|raw|hybrid] [--video NAME]... [--from HH:MM:SS] [--to HH:MM:SS] [--top-k N]`
+**Descrizione:** Avvia una chat salvata sul progetto. Senza `--message` entra in modalità interattiva; con `--message` invia un turno e termina. Ogni turno viene salvato in `project.db` (`chat_sessions`, `chat_messages`) e in `sessions/<session_id>.json`. Le sessioni esistenti si continuano con `--session`.
+**Exit code:** 0 = turno completato o sessione interattiva chiusa. 1 = progetto sconosciuto, `config.yaml` non valido, indici mancanti, indice corrotto, timecode/fonte non valido, o domanda vuota.
+**Esempio:**
+```
+$ videodoc chat corso-software-x --message "Come si configura il database?" --source hybrid
+Project: corso-software-x
+Session: chat_20260718T215705_ab28b6bb
+Answer:
+Risposta basata solo sulle fonti recuperate:
+- La configurazione del database ... [1]
+Sources:
+[1] docs/04-configurazione-database.md score=0.812 type=generated_documentation section=Configurazione database
+    # Configurazione database ...
+```
+**Vedi anche:** [features/chat.md](features/chat.md)
 
 ---
 

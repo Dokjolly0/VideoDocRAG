@@ -553,3 +553,41 @@ def test_chunk_helpers_wrap_sqlite_errors(tmp_path):
         replace_chunks(db_path, "demo", [])
     with pytest.raises(DatabaseError):
         list_chunks(db_path, "demo")
+
+
+def test_chat_session_helpers_roundtrip(tmp_path):
+    from videodoc.core.storage.database import (
+        ChatMessageRow,
+        ChatSessionRow,
+        insert_chat_message,
+        list_chat_messages,
+        list_chat_sessions,
+        upsert_chat_session,
+    )
+
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_chat_session(
+        db_path,
+        ChatSessionRow(
+            id="chat_1",
+            title="Domanda",
+            default_source="docs",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+        ),
+    )
+    insert_chat_message(
+        db_path,
+        ChatMessageRow(
+            id="msg_1",
+            session_id="chat_1",
+            role="user",
+            content="Ciao",
+            sources_json=None,
+            created_at="2026-01-01T00:00:01+00:00",
+        ),
+    )
+
+    assert list_chat_sessions(db_path)[0].id == "chat_1"
+    assert list_chat_messages(db_path, "chat_1")[0].content == "Ciao"
