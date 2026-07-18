@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — One-shot pipeline command
+- Added `videodoc run`: orchestrates the implemented pipeline in README order from `scan` through `index-docs`, with a per-step summary and recoverable per-item errors surfaced as warnings.
+- Added `core/services/pipeline_service.py` and CLI wiring for `run`, including `--format` for the final export and `--top-k` for Markdown generation.
+- Added service and CLI tests for step ordering, warning status, stop-on-structural-failure behavior, command output, option passing, and unknown-project failure.
+- Docs: README §10, `docs/commands.md`, `RUN.md`, and `docs/features/pipeline-run.md` now document `videodoc run`.
+
 ## Unreleased — Codebase synchronization
 - Added `videodoc sync-codebase`: scans project codebase sources with the configured exclusions, hashes files, detects added/modified/removed files, extracts citably linked snippets, and writes `indexes/codebase_manifest.json` plus `indexes/codebase_index.json` — see [features/codebase-sync.md](features/codebase-sync.md).
 - Added `core/models/codebase_manifest.py` and `core/services/codebase_sync_service.py` with Python top-level symbol extraction and fallback line-block chunking.

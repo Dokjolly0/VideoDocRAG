@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; sincronizzazione codebase — `sync-codebase`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; sezioni Markdown — `generate`; indice documentazione — `index-docs`; revisione — `review`; export — `export`; chat salvata — `chat`; stato e ispezione — `status`, `inspect`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (GUI e API web — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; pipeline completa — `run`; scansione fonti — `scan`; ingestion video — `ingest`; sincronizzazione codebase — `sync-codebase`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; sezioni Markdown — `generate`; indice documentazione — `index-docs`; revisione — `review`; export — `export`; chat salvata — `chat`; stato e ispezione — `status`, `inspect`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (GUI e API web — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -817,6 +817,30 @@ Formati supportati:
 
 L'export è locale e senza dipendenze aggiuntive. Sovrascrive i file che produce, ma non cancella intere cartelle export.
 
+### 5.20.1 Eseguire tutta la pipeline (`run`)
+
+Esegue in sequenza gli step implementati della pipeline:
+
+```bash
+videodoc run corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+--------+
+| Steps         | 16     |
+| Export format | mkdocs |
++---------------+--------+
+```
+
+L'ordine è: `scan`, `ingest`, `sync-codebase`, `extract-audio`, `transcribe`, `frames`, `ocr`, `code`, `chunk`, `embed`, `index`, `outline`, `generate`, `review`, `export`, `index-docs`. Di default l'export finale usa `mkdocs`, come nel flusso completo del README; per cambiarlo:
+
+```bash
+videodoc run corso-software-x --format html --top-k 6
+```
+
+Il comando si ferma al primo errore strutturale dello step corrente. Gli errori per singolo video/file già gestiti dai servizi restano nel riepilogo come warning. `run` non apre la chat interattiva: prepara gli indici e la documentazione, poi puoi usare `videodoc ask` o `videodoc chat`.
+
 ### 5.21 Usare la chat salvata (`chat`)
 
 `ask` resta il comando one-shot; ora accetta anche filtri:
@@ -1111,7 +1135,7 @@ Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslat
 
 ## 9. Cosa non è ancora disponibile
 
-Questi step coprono gestione progetti, scansione fonti, ingestion video, sincronizzazione codebase, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale, outline, generazione sezioni Markdown, indice documentazione, revisione automatica, export, chat salvata, stato pipeline e ispezione puntuale. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi step coprono gestione progetti, pipeline completa one-shot, scansione fonti, ingestion video, sincronizzazione codebase, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale, outline, generazione sezioni Markdown, indice documentazione, revisione automatica, export, chat salvata, stato pipeline e ispezione puntuale. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
 - l'interfaccia GUI (`videodoc gui`).
 

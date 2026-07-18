@@ -92,6 +92,40 @@ C:\Users\utente\VideoDocRAG\projects\corso-software-x
 
 ---
 
+## run
+
+**Sintassi:** `videodoc run <project> [--format FORMAT] [--top-k N]`
+**Descrizione:** Esegue la pipeline implementata in un solo comando: `scan`, `ingest`, `sync-codebase`, `extract-audio`, `transcribe`, `frames`, `ocr`, `code`, `chunk`, `embed`, `index`, `outline`, `generate`, `review`, `export`, `index-docs`. L'export finale usa `mkdocs` di default, per coerenza con il flusso completo del README; `--top-k` viene passato alla generazione delle sezioni Markdown.
+**Exit code:** 0 = tutti gli step strutturali completati; eventuali errori per singolo video/file già gestiti dai servizi sono mostrati come warning. 1 = progetto/config non valido, tool esterno mancante, sorgenti non pronte, indice/outline/documentazione non disponibili, formato export non supportato, o altro errore strutturale nello step corrente.
+**Esempio:**
+```
+$ videodoc run corso-software-x --format mkdocs --top-k 6
+Project: corso-software-x
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Step           ┃ Status    ┃ Detail                                     ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ scan           │ completed │ videos=8, attachments=3, codebase_files=42 │
+│ ingest         │ skipped   │ ingested=0, reingested=0, skipped=8        │
+│ sync-codebase  │ completed │ files=42, snippets=88, added=0, modified=1, removed=0 │
+│ extract-audio  │ skipped   │ extracted=0, skipped=8                    │
+│ transcribe     │ skipped   │ transcribed=0, skipped=8                  │
+│ frames         │ skipped   │ extracted=0, skipped=8                    │
+│ ocr            │ skipped   │ processed=0, skipped=8                    │
+│ code           │ skipped   │ processed=0, skipped=8                    │
+│ chunk          │ skipped   │ processed=0, skipped=8                    │
+│ embed          │ skipped   │ processed=0, skipped=8                    │
+│ index          │ skipped   │ records=512, videos=8                     │
+│ outline        │ skipped   │ sections=8                                │
+│ generate       │ skipped   │ generated=0, skipped=8                    │
+│ review         │ completed │ sections=8, issues=0, errors=0, warnings=0 │
+│ export         │ completed │ format=mkdocs, files=10, output=.../exports/mkdocs │
+│ index-docs     │ completed │ records=8, inputs=1                       │
+└────────────────┴───────────┴────────────────────────────────────────────┘
+```
+**Vedi anche:** [features/pipeline-run.md](features/pipeline-run.md)
+
+---
+
 ## scan
 
 **Sintassi:** `videodoc scan <project>`

@@ -23,6 +23,7 @@ from videodoc.cli.commands import (
     path as path_cmd,
     regenerate,
     review,
+    run as run_cmd,
     scan,
     setup,
     status,
@@ -37,6 +38,7 @@ app.command("list")(list_projects.list_command)
 app.command("link")(link.link_command)
 app.command("unlink")(unlink.unlink_command)
 app.command("path")(path_cmd.path_command)
+app.command("run")(run_cmd.run_command)
 app.command("scan")(scan.scan_command)
 app.command("ingest")(ingest.ingest_command)
 app.command("extract-audio")(extract_audio.extract_audio_command)

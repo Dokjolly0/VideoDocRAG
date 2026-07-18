@@ -959,7 +959,9 @@ Deve inoltre essere possibile eseguire tutto con un solo comando:
 videodoc run corso-software-x
 ```
 
-Lo stesso flusso deve essere avviabile anche dalla GUI, che internamente richiama i servizi del modulo `core`.
+Nota implementativa: questa modalità è disponibile dal comando **`videodoc run`**. Il comando esegue gli step implementati della pipeline in ordine (`scan`, `ingest`, `sync-codebase`, `extract-audio`, `transcribe`, `frames`, `ocr`, `code`, `chunk`, `embed`, `index`, `outline`, `generate`, `review`, `export`, `index-docs`) e produce un riepilogo per fase. Non apre la chat interattiva: prepara indice raw, documentazione esportata e indice docs, così `ask`/`chat` possono essere usati subito dopo.
+
+Lo stesso flusso dovrà essere avviabile anche dalla GUI, che internamente richiamerà i servizi del modulo `core`.
 
 ---
 
