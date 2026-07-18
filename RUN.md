@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; sezioni Markdown — `generate`; revisione — `review`; export — `export`; chat salvata — `chat`; stato e ispezione — `status`, `inspect`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (GUI e API web — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; sincronizzazione codebase — `sync-codebase`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; sezioni Markdown — `generate`; revisione — `review`; export — `export`; chat salvata — `chat`; stato e ispezione — `status`, `inspect`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (GUI e API web — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -343,6 +343,36 @@ Warning: workshop-05: video content changed and was reingested -- workdir/worksh
 ```
 
 A differenza di `scan`, **zero video trovati fa fallire `ingest`** (`exit code` 1): è il primo comando della pipeline vera e propria, e README §15.1 richiede che un progetto senza video non possa avviarla. Se `ffprobe` non è disponibile in `PATH`, `ingest` fallisce subito, senza creare `project.db` né alcuna cartella.
+
+### 5.7.1 Sincronizzare la codebase (`sync-codebase`)
+
+Se il progetto contiene una cartella `codebase/` (interna o configurata come path esterno), indicizza i file sorgenti supportati in snippet citabili:
+
+```bash
+videodoc sync-codebase corso-software-x
+```
+
+```text
+Project: corso-software-x
++--------------------------------------------------------------+
+| Synced   | yes                                                |
+| Skipped  | no                                                 |
+| Files    | 42                                                 |
+| Snippets | 96                                                 |
+| Added    | 42                                                 |
+| Modified | 0                                                  |
+| Removed  | 0                                                  |
+| Manifest | .../indexes/codebase_manifest.json                 |
+| Index    | .../indexes/codebase_index.json                    |
++--------------------------------------------------------------+
+```
+
+Il comando rispetta le stesse esclusioni di `scan`, calcola hash SHA-256 dei file, rileva aggiunte/modifiche/rimozioni e scrive:
+
+- `indexes/codebase_manifest.json`, con file e snippet;
+- `indexes/codebase_index.json`, un indice locale ricercabile da `ask`/`chat` in modalità `raw` o `hybrid`.
+
+Gli snippet Python sono estratti per funzioni/classi top-level quando il file è parseabile; gli altri file vengono divisi in blocchi logici di righe. Ogni fonte include un riferimento stabile come `codebase/src/app/main.py#L24-L58`.
 
 ### 5.8 Estrarre l'audio dai video di un progetto
 
@@ -1045,9 +1075,8 @@ Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslat
 
 ## 9. Cosa non è ancora disponibile
 
-Questi step coprono gestione progetti, scansione fonti, ingestion video, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale, outline, generazione sezioni Markdown, revisione automatica, export, chat salvata, stato pipeline e ispezione puntuale. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi step coprono gestione progetti, scansione fonti, ingestion video, sincronizzazione codebase, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale, outline, generazione sezioni Markdown, revisione automatica, export, chat salvata, stato pipeline e ispezione puntuale. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
-- `videodoc sync-codebase` — sincronizzazione e indicizzazione della codebase;
 - l'interfaccia GUI (`videodoc gui`).
 
 Questi comandi verranno aggiunti negli step successivi.

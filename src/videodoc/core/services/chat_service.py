@@ -105,6 +105,7 @@ class ChatAnswerService:
         self.sessions_dir = self.project_dir / "sessions"
         self.db_path = self.project_dir / config.paths.database
         self.raw_index_path = self.project_dir / config.paths.indexes / "vector_index.json"
+        self.codebase_index_path = self.project_dir / config.paths.indexes / "codebase_index.json"
 
     def answer(
         self,
@@ -142,18 +143,23 @@ class ChatAnswerService:
             doc_index = DocumentationIndexService(self.project_dir, self.config).build()
             doc_records = len(doc_index.records)
             candidates.extend(_search_index(doc_index, query, filters=filters, top_k=top_k, index_kind="docs"))
-        if mode == "docs" and doc_records == 0 and not self.raw_index_path.is_file():
+        has_raw_source = self.raw_index_path.is_file() or self.codebase_index_path.is_file()
+        if mode == "docs" and doc_records == 0 and not has_raw_source:
             raise VectorIndexUnavailableError(
-                f"No generated documentation or raw vector index found -- run 'videodoc generate' or 'videodoc index' first."
+                "No generated documentation, raw vector index, or codebase index found -- "
+                "run 'videodoc generate', 'videodoc index', or 'videodoc sync-codebase' first."
             )
-        use_raw = mode in {"raw", "hybrid"} or (mode == "docs" and doc_records == 0 and self.raw_index_path.is_file())
+        use_raw = mode in {"raw", "hybrid"} or (mode == "docs" and doc_records == 0 and has_raw_source)
         if use_raw:
-            if not self.raw_index_path.is_file():
+            raw_paths = [path for path in (self.raw_index_path, self.codebase_index_path) if path.is_file()]
+            if not raw_paths:
                 raise VectorIndexUnavailableError(
-                    f"No vector index found at {self.raw_index_path} -- run 'videodoc index' first."
+                    f"No raw or codebase index found under {self.project_dir / self.config.paths.indexes} -- "
+                    "run 'videodoc index' or 'videodoc sync-codebase' first."
                 )
-            raw_index = VectorIndex.load(self.raw_index_path)
-            candidates.extend(_search_index(raw_index, query, filters=filters, top_k=top_k, index_kind="raw"))
+            for raw_path in raw_paths:
+                raw_index = VectorIndex.load(raw_path)
+                candidates.extend(_search_index(raw_index, query, filters=filters, top_k=top_k, index_kind="raw"))
 
         candidates.sort(key=lambda source: (-source.score, source.source_type, source.record_id))
         selected = []

@@ -24,6 +24,7 @@ from videodoc.cli.commands import (
     scan,
     setup,
     status,
+    sync_codebase,
     transcribe,
     unlink,
 )
@@ -37,6 +38,7 @@ app.command("path")(path_cmd.path_command)
 app.command("scan")(scan.scan_command)
 app.command("ingest")(ingest.ingest_command)
 app.command("extract-audio")(extract_audio.extract_audio_command)
+app.command("sync-codebase")(sync_codebase.sync_codebase_command)
 app.command("transcribe")(transcribe.transcribe_command)
 app.command("frames")(frames.frames_command)
 app.command("ocr")(ocr.ocr_command)

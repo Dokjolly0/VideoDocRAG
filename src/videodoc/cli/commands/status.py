@@ -35,6 +35,7 @@ def _rows(result: PipelineStatusResult) -> list[tuple[str, str]]:
         ("Chunks generated", _count(result.videos, "chunks")),
         ("Embeddings generated", _count(result.videos, "embeddings")),
         ("Raw index", _index(result.raw_index)),
+        ("Codebase index", _index(result.codebase_index)),
         ("Documentation index", _index(result.documentation_index)),
         ("Documentation", _documentation(docs)),
         ("Chat sessions", str(result.chat_sessions)),

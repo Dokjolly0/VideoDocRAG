@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Codebase synchronization
+- Added `videodoc sync-codebase`: scans project codebase sources with the configured exclusions, hashes files, detects added/modified/removed files, extracts citably linked snippets, and writes `indexes/codebase_manifest.json` plus `indexes/codebase_index.json` — see [features/codebase-sync.md](features/codebase-sync.md).
+- Added `core/models/codebase_manifest.py` and `core/services/codebase_sync_service.py` with Python top-level symbol extraction and fallback line-block chunking.
+- Extended `ask`/`chat` raw and hybrid retrieval to include `indexes/codebase_index.json` alongside the video chunk index.
+- Extended `status` to report the codebase index.
+- Added service and CLI tests for sync/idempotency/removal/no-op behavior plus raw chat retrieval over synced codebase snippets.
+- Docs: README §15/§35, `docs/commands.md`, `RUN.md`, and `docs/features/codebase-sync.md` now document `videodoc sync-codebase`.
+
 ## Unreleased — Pipeline status and timestamp inspection
 - Added `videodoc status`: non-destructive project pipeline summary over `sources.yaml`, `project.db`, `workdir/`, `indexes/`, `docs/`, `exports/`, and saved chat sessions — see [features/status-inspect.md](features/status-inspect.md).
 - Added `videodoc inspect --timestamp HH:MM:SS [--video NAME]`: timestamp drill-down for transcript, frame/OCR, nearby code blocks, chunks, and generated documentation source manifests.

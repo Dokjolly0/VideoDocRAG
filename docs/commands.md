@@ -146,6 +146,31 @@ Warning: workshop-05: video content changed and was reingested -- workdir/worksh
 
 ---
 
+## sync-codebase
+
+**Sintassi:** `videodoc sync-codebase <project>`
+**Descrizione:** Sincronizza la cartella `codebase/` del progetto (interna o esterna), rispettando le esclusioni configurate in `scan:`, calcola hash dei file, rileva file aggiunti/modificati/rimossi, estrae snippet citabili e scrive `indexes/codebase_manifest.json` + `indexes/codebase_index.json`. L'indice codebase è ricercabile da `ask`/`chat` con `--source raw` o `--source hybrid`.
+**Exit code:** 0 = sincronizzazione completata, skip idempotente, o nessuna codebase presente. 1 = progetto sconosciuto, `config.yaml` non valido, o errore di scrittura degli artefatti.
+**Esempio:**
+```
+$ videodoc sync-codebase corso-software-x
+Project: corso-software-x
++--------------------------------------------------------------+
+| Synced   | yes                                                |
+| Skipped  | no                                                 |
+| Files    | 42                                                 |
+| Snippets | 96                                                 |
+| Added    | 42                                                 |
+| Modified | 0                                                  |
+| Removed  | 0                                                  |
+| Manifest | .../indexes/codebase_manifest.json                 |
+| Index    | .../indexes/codebase_index.json                    |
++--------------------------------------------------------------+
+```
+**Vedi anche:** [features/codebase-sync.md](features/codebase-sync.md)
+
+---
+
 ## extract-audio
 
 **Sintassi:** `videodoc extract-audio <project>`
@@ -361,9 +386,9 @@ Project: corso-software-x
 ## ask
 
 **Sintassi:** `videodoc ask <project> "domanda" [--source docs|raw|hybrid] [--video NAME]... [--from HH:MM:SS] [--to HH:MM:SS] [--top-k N]`
-**Descrizione:** Interroga la knowledge base in modalità one-shot. `--source docs` (default) usa la documentazione generata indicizzata in `indexes/documentation_index.json`; `raw` usa `indexes/vector_index.json`; `hybrid` combina entrambe. I filtri `--video`, `--from` e `--to` limitano le fonti recuperate. La risposta resta estrattiva e cita solo fonti recuperate.
+**Descrizione:** Interroga la knowledge base in modalità one-shot. `--source docs` (default) usa la documentazione generata indicizzata in `indexes/documentation_index.json`; `raw` usa `indexes/vector_index.json` e/o `indexes/codebase_index.json`; `hybrid` combina documentazione, chunk raw e snippet codebase. I filtri `--video`, `--from` e `--to` limitano le fonti video recuperate. La risposta resta estrattiva e cita solo fonti recuperate.
 **Exit code:** 0 = risposta prodotta o nessuna fonte sufficiente trovata. 1 = progetto sconosciuto, `config.yaml` non valido, indici mancanti (`run 'videodoc generate'`/`index` first), indice corrotto/non ricercabile localmente, timecode non valido, fonte non valida, o domanda vuota.
-**Prerequisito:** per `docs` servono sezioni generate; per `raw` serve `videodoc index`. Se `docs` non ha ancora sezioni ma esiste l'indice raw, `ask` usa automaticamente le fonti raw per mantenere interrogabile una pipeline parziale.
+**Prerequisito:** per `docs` servono sezioni generate; per `raw` serve `videodoc index` e/o `videodoc sync-codebase`. Se `docs` non ha ancora sezioni ma esiste un indice raw/codebase, `ask` usa automaticamente quelle fonti per mantenere interrogabile una pipeline parziale.
 **Esempio:**
 ```
 $ videodoc ask corso-software-x "Come si configura il database?" --top-k 3
@@ -382,7 +407,7 @@ Sources:
 ## chat
 
 **Sintassi:** `videodoc chat <project> [--message "domanda"] [--session ID] [--source docs|raw|hybrid] [--video NAME]... [--from HH:MM:SS] [--to HH:MM:SS] [--top-k N]`
-**Descrizione:** Avvia una chat salvata sul progetto. Senza `--message` entra in modalità interattiva; con `--message` invia un turno e termina. Ogni turno viene salvato in `project.db` (`chat_sessions`, `chat_messages`) e in `sessions/<session_id>.json`. Le sessioni esistenti si continuano con `--session`.
+**Descrizione:** Avvia una chat salvata sul progetto. Senza `--message` entra in modalità interattiva; con `--message` invia un turno e termina. In modalità `raw`/`hybrid` interroga anche `indexes/codebase_index.json` quando `videodoc sync-codebase` è stato eseguito. Ogni turno viene salvato in `project.db` (`chat_sessions`, `chat_messages`) e in `sessions/<session_id>.json`. Le sessioni esistenti si continuano con `--session`.
 **Exit code:** 0 = turno completato o sessione interattiva chiusa. 1 = progetto sconosciuto, `config.yaml` non valido, indici mancanti, indice corrotto, timecode/fonte non valido, o domanda vuota.
 **Esempio:**
 ```
@@ -421,6 +446,7 @@ Project: corso-software-x
 | Chunks generated     | 8/8                                              |
 | Embeddings generated | 8/8                                              |
 | Raw index            | yes (512 records, 8 inputs)                      |
+| Codebase index       | yes (96 records, 1 inputs)                       |
 | Documentation index  | yes (8 records, 8 inputs)                        |
 | Documentation        | outline=yes, sections=8, sources=8, review=yes, exports=mkdocs |
 | Chat sessions        | 3                                                |

@@ -68,6 +68,7 @@ class PipelineStatusResult:
     sources: SourceScanStatus
     videos: tuple[VideoPipelineStatus, ...]
     raw_index: IndexStatus
+    codebase_index: IndexStatus
     documentation_index: IndexStatus
     documentation: DocumentationStatus
     chat_sessions: int
@@ -88,6 +89,7 @@ class PipelineStatusService:
         sources = self._source_status(warnings)
         videos = self._video_statuses()
         raw_index = self._index_status(self.indexes_dir / "vector_index.json", warnings, label="vector index")
+        codebase_index = self._index_status(self.indexes_dir / "codebase_index.json", warnings, label="codebase index")
         docs_index = self._index_status(
             self.indexes_dir / "documentation_index.json",
             warnings,
@@ -103,6 +105,7 @@ class PipelineStatusService:
             sources=sources,
             videos=tuple(videos),
             raw_index=raw_index,
+            codebase_index=codebase_index,
             documentation_index=docs_index,
             documentation=documentation,
             chat_sessions=chat_sessions,

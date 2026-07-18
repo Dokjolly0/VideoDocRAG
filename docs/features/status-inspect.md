@@ -16,7 +16,7 @@ Lo status combina:
 - `sources.yaml` per sapere se lo scan fonti è stato eseguito;
 - `project.db` per video, segmenti transcript, frame, blocchi codice, chunk e chat salvate;
 - manifest/file in `workdir/<video_id>/...` per audio, transcript, frame, OCR, codice e chunk;
-- `indexes/embeddings/<video_id>.json`, `indexes/vector_index.json` e `indexes/documentation_index.json` per embedding e indici;
+- `indexes/embeddings/<video_id>.json`, `indexes/vector_index.json`, `indexes/codebase_index.json` e `indexes/documentation_index.json` per embedding e indici;
 - `docs/`, `docs/sources/`, `docs/review_report.*` ed `exports/` per documentazione, revisione ed export.
 
 Gli indici vengono caricati con `VectorIndex.load()`: un file presente ma corrotto è riportato come warning e non come indice valido.

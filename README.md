@@ -1391,6 +1391,8 @@ La sincronizzazione deve:
 5. indicizzare gli snippet nel vector database;
 6. conservare per ogni snippet il link al file relativo, per esempio `codebase/src/app/main.py#L24-L58`.
 
+Nota implementativa: questa fase è implementata dal comando **`videodoc sync-codebase`**. Il comando usa le stesse esclusioni e soglie di `videodoc scan`, produce `indexes/codebase_manifest.json` con file/snippet/hash e `indexes/codebase_index.json` con embedding locali feature-hashing degli snippet. Python parseabile viene diviso per funzioni/classi top-level; gli altri file vengono spezzati in blocchi di righe. `ask` e `chat` includono l'indice codebase in modalità `raw` e `hybrid`, mostrando il link citabile in `doc_path`. Vedi `docs/features/codebase-sync.md`.
+
 ---
 
 # 16. Fase 3 — Estrazione audio
@@ -2962,6 +2964,8 @@ Fonte codice: `codebase/src/app/main.py#L24-L58`
 ```
 
 Il sistema deve evitare di indicizzare cartelle non pertinenti come `.git`, `node_modules`, `__pycache__` e artefatti di build, salvo diversa configurazione.
+
+Nota implementativa: la sincronizzazione locale della codebase è disponibile con **`videodoc sync-codebase`**. Gli snippet vengono salvati in `indexes/codebase_manifest.json`, indicizzati in `indexes/codebase_index.json` e diventano interrogabili da `ask`/`chat` con `--source raw` o `--source hybrid`. Vedi `docs/features/codebase-sync.md`.
 
 ---
 

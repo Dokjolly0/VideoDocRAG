@@ -64,6 +64,10 @@ class InvalidCodeManifestError(VideoDocError):
     """Raised when a video's code extraction manifest is missing, malformed, or fails validation."""
 
 
+class InvalidCodebaseManifestError(VideoDocError):
+    """Raised when a codebase sync manifest is missing, malformed, or fails validation."""
+
+
 class InvalidChunkManifestError(VideoDocError):
     """Raised when a video's chunk manifest is missing, malformed, or fails validation."""
 
