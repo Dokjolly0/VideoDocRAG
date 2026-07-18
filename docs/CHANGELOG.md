@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Documentation export
+- Added `videodoc export --format markdown|mkdocs|docusaurus|github-pages|pdf|html`: packages generated docs into local `exports/<format>/` folders — see [features/documentation-export.md](features/documentation-export.md).
+- Added dependency-free exporters for Markdown folders, MkDocs, Docusaurus, static HTML/GitHub Pages and a simple text PDF.
+- Added `core/services/export_service.py` and CLI wiring.
+- Added service and CLI tests covering all supported formats, missing generated sections and unsupported format errors.
+- Docs: README §28, `docs/commands.md`, `RUN.md`, and `docs/features/documentation-export.md` now document `videodoc export`.
+
 ## Unreleased — Documentation review reports
 - Added `videodoc review`: checks generated Markdown sections and `docs/sources/*.sources.json` manifests, then writes `docs/review_report.md` and `docs/review_report.json` — see [features/documentation-review.md](features/documentation-review.md).
 - Added deterministic review checks for required Markdown headings, balanced code fences, video/timestamp references, source citations, basic anti-hallucination overlap against indexed source text, duplicate code blocks, and code classification.

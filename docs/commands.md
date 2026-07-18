@@ -442,6 +442,26 @@ Project: corso-software-x
 
 ---
 
+## export
+
+**Sintassi:** `videodoc export <project> [--format markdown|mkdocs|docusaurus|github-pages|pdf|html]`
+**Descrizione:** Esporta le sezioni generate da `docs/` in `exports/<format>/`. Il formato `markdown` copia i Markdown generati; `mkdocs` crea `mkdocs.yml` e `docs/index.md`; `docusaurus` crea uno scaffold minimale; `html` e `github-pages` creano pagine HTML statiche; `github-pages` aggiunge `.nojekyll`; `pdf` crea un PDF testuale semplice e locale.
+**Exit code:** 0 = export completato. 1 = progetto sconosciuto, `config.yaml` non valido, formato non supportato, nessuna sezione generata (`run 'videodoc generate' first`), o errore di scrittura/copia.
+**Prerequisito:** richiede `videodoc generate`.
+**Esempio:**
+```
+$ videodoc export corso-software-x --format mkdocs
+Project: corso-software-x
++-----------------------------+
+| Format | mkdocs             |
+| Files  | 10                 |
+| Output | .../exports/mkdocs |
++-----------------------------+
+```
+**Vedi anche:** [features/documentation-export.md](features/documentation-export.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

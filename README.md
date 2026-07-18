@@ -1932,6 +1932,8 @@ nav:
 ```
 
 
+Nota implementativa: questa fase è implementata dal comando **`videodoc export`**. Il comando legge le sezioni generate in `docs/[0-9][0-9]-*.md` ed esporta in `exports/<format>/`, supportando `markdown`, `mkdocs`, `docusaurus`, `github-pages`, `pdf` e `html`. Gli export MkDocs e Docusaurus producono scaffold minimi; HTML/GitHub Pages usano un renderer Markdown locale essenziale; PDF usa un writer PDF minimale senza dipendenze aggiuntive. L'export sovrascrive i file che produce ma non cancella intere cartelle export, così eventuali file aggiunti manualmente non vengono rimossi. Vedi `docs/features/documentation-export.md`.
+
 ---
 
 # 29. Fase 16 — Chat sulla documentazione e sui video

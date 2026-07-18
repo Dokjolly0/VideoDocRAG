@@ -104,6 +104,14 @@ class DocumentationReviewUnavailableError(VideoDocError):
     """Raised when documentation review has no generated Markdown sections to inspect."""
 
 
+class DocumentationExportUnavailableError(VideoDocError):
+    """Raised when documentation export has no generated Markdown sections to package."""
+
+
+class DocumentationExportFormatError(VideoDocError):
+    """Raised when a requested documentation export format is not supported."""
+
+
 class OCREngineUnavailableError(VideoDocError):
     """Raised once, up front, when at least one video needs fresh OCR but the 'rapidocr'
     package cannot be imported -- checked a single time per run rather than once per frame.
