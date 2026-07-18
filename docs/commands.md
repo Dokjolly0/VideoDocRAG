@@ -358,6 +358,27 @@ Project: corso-software-x
 
 ---
 
+## ask
+
+**Sintassi:** `videodoc ask <project> "domanda" [--top-k N]`
+**Descrizione:** Interroga l'indice vettoriale locale `indexes/vector_index.json`: crea l'embedding della domanda con lo stesso backend locale (`feature-hashing`), cerca per cosine similarity, deduplica i record che puntano allo stesso chunk e stampa una risposta estrattiva basata solo sugli estratti recuperati, con fonti numerate.
+**Exit code:** 0 = risposta prodotta o nessuna fonte sufficiente trovata. 1 = progetto sconosciuto, `config.yaml` non valido, indice mancante (`run 'videodoc index' first`), indice corrotto/non ricercabile localmente, o domanda vuota.
+**Prerequisito:** richiede `videodoc index` dopo `videodoc embed`. Non chiama ancora un LLM esterno: se le fonti indicizzate non contengono una procedura o spiegazione, il comando lo dichiara invece di inventarla.
+**Esempio:**
+```
+$ videodoc ask corso-software-x "Come si configura il database?" --top-k 3
+Project: corso-software-x
+Answer:
+Risposta basata solo sulle fonti recuperate:
+- La configurazione del database viene mostrata nel file config.yaml ... [1]
+Sources:
+[1] workshop_03_database.mp4 00:12:10-00:18:45 score=0.842 chunk=workshop_03_database_chunk_0004 type=combined source=transcript topic=Database
+    La configurazione del database viene mostrata nel file config.yaml ...
+```
+**Vedi anche:** [features/retrieval-rag.md](features/retrieval-rag.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

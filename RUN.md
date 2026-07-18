@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (Step 1: gestione progetti — `init`, `list`, `link`, `unlink`, `path`; Step 2: scansione delle fonti — `scan`, percorsi sorgente esterni; Step 3: ingestion dei video — `ingest`; Step 4: estrazione audio — `extract-audio`; Step 5: trascrizione audio — `transcribe`; Step 6: estrazione frame — `frames`; Step 7: OCR degli screenshot — `ocr`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (riconoscimento del codice, RAG, generazione documentazione, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (generazione documentazione, revisione/export, chat — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -627,7 +627,29 @@ Project: corso-software-x
 
 Un progetto senza embedding viene saltato senza errore. Un manifest embedding corrotto viene segnalato come `Warning` per-video e non blocca gli altri video indicizzabili.
 
-### 5.16 Verificare lo stato dell'ambiente (`doctor`)
+### 5.16 Interrogare l'indice locale (`ask`)
+
+Recupera i chunk più rilevanti dall'indice vettoriale e costruisce una risposta estrattiva con fonti numerate:
+
+```bash
+videodoc ask corso-software-x "Come si configura il database?" --top-k 3
+```
+
+```text
+Project: corso-software-x
+Answer:
+Risposta basata solo sulle fonti recuperate:
+- La configurazione del database viene mostrata nel file config.yaml ... [1]
+Sources:
+[1] workshop_03_database.mp4 00:12:10-00:18:45 score=0.842 chunk=workshop_03_database_chunk_0004 type=combined source=transcript topic=Database
+    La configurazione del database viene mostrata nel file config.yaml ...
+```
+
+Il comando usa lo stesso embedding locale deterministico (`feature-hashing`) della fase `embed`, cerca in `indexes/vector_index.json` con cosine similarity e deduplica i record che puntano allo stesso chunk. Non chiama ancora un LLM esterno: la risposta è composta solo da estratti recuperati. Se le fonti indicizzate non contengono informazioni sufficienti, il comando lo dichiara invece di inventare una procedura.
+
+Se l'indice manca, `ask` fallisce con un suggerimento esplicito a eseguire prima `videodoc index`.
+
+### 5.17 Verificare lo stato dell'ambiente (`doctor`)
 
 Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
 
@@ -649,7 +671,7 @@ Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode —
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
-### 5.17 Applicare le correzioni automaticamente (`setup`)
+### 5.18 Applicare le correzioni automaticamente (`setup`)
 
 Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
 
@@ -798,7 +820,7 @@ Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.all
 FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
 
 **`videodoc transcribe` fallisce con un errore che menziona `cublas` o una libreria CUDA mancante.**
-Esegui prima `videodoc doctor` (§5.16): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.17) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
+Esegui prima `videodoc doctor` (§5.17): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.18) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
 
 `faster-whisper` rileva automaticamente l'hardware disponibile e, su una macchina dove viene individuata una GPU ma mancano le librerie runtime CUDA (es. `cublas64_12.dll` su Windows), fallisce invece di ripiegare in modo pulito sulla CPU. **Dove esattamente fallisce cambia il comportamento del comando**, e dipende da un dettaglio interno di `faster-whisper`/`ctranslate2` non controllabile da questo codice:
 - Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.

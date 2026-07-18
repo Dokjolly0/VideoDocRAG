@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Local retrieval and extractive RAG
+- Added `videodoc ask`: embeds a user question, searches `indexes/vector_index.json` with cosine similarity, deduplicates repeated embedding records for the same chunk, and prints a grounded answer plus numbered sources — see [features/retrieval-rag.md](features/retrieval-rag.md).
+- Added `core/services/retrieval_service.py` with local vector-index loading, source ranking, no-source fallback answers, and explicit validation for non-local/corrupt indexes.
+- Added `VectorIndexUnavailableError` for missing indexes with an actionable `videodoc index` hint.
+- Added tests for retrieval ranking, deduplication, missing-index/no-source/error paths, and CLI output.
+- Docs: README §24, `docs/commands.md`, `RUN.md`, and `docs/features/retrieval-rag.md` now document `videodoc ask`.
+
 ## Unreleased — Local vector indexing
 - Added `videodoc index`: reads embedding manifests from `indexes/embeddings/<id>.json` and writes a project-level local vector index to `indexes/vector_index.json`, with vectors plus retrieval-ready payloads — see [features/vector-indexing.md](features/vector-indexing.md).
 - Added `core/models/vector_index.py`, `core/utils/vector_index.py`, and `core/services/index_service.py` with input signatures over embedding manifests so the index is rebuilt only when embedding records change.

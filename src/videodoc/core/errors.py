@@ -80,6 +80,10 @@ class InvalidVectorIndexError(VideoDocError):
     """Raised when a local vector index manifest is missing, malformed, or fails validation."""
 
 
+class VectorIndexUnavailableError(VideoDocError):
+    """Raised when retrieval needs a vector index that has not been built yet."""
+
+
 class VectorIndexNotSupportedError(VideoDocError):
     """Raised when config.retrieval.vector_db names a vector backend that is not implemented."""
 

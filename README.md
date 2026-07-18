@@ -1766,6 +1766,8 @@ Regola fondamentale:
 Se una procedura, un comando o una spiegazione non appare nelle fonti recuperate, il modello non deve inventarla.
 ```
 
+Nota implementativa: questa fase è implementata dal comando **`videodoc ask`**. Il comando carica l'indice locale `indexes/vector_index.json`, crea l'embedding della domanda con lo stesso backend deterministico usato da `videodoc embed`, cerca per cosine similarity, deduplica i record dello stesso chunk e restituisce una risposta estrattiva con fonti numerate. Non chiama ancora un LLM: per rispettare subito la regola anti-allucinazione, la risposta è composta solo da estratti recuperati; se nessuna fonte ha un match utile, il comando dichiara che le fonti indicizzate non contengono informazioni sufficienti. Vedi `docs/features/retrieval-rag.md`.
+
 ---
 
 # 25. Fase 12 — Generazione dell’indice della documentazione
