@@ -92,6 +92,14 @@ class OutlineSourceUnavailableError(VideoDocError):
     """Raised when documentation outline generation has no chunk/source material to use."""
 
 
+class DocumentationOutlineUnavailableError(VideoDocError):
+    """Raised when Markdown section generation needs an outline that is missing or empty."""
+
+
+class InvalidDocumentationSectionManifestError(VideoDocError):
+    """Raised when a generated documentation section source manifest is malformed."""
+
+
 class OCREngineUnavailableError(VideoDocError):
     """Raised once, up front, when at least one video needs fresh OCR but the 'rapidocr'
     package cannot be imported -- checked a single time per run rather than once per frame.

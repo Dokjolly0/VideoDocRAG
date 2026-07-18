@@ -400,6 +400,26 @@ Project: corso-software-x
 
 ---
 
+## generate
+
+**Sintassi:** `videodoc generate <project> [--force] [--top-k N]`
+**Descrizione:** Legge `docs/outline.md`, recupera chunk pertinenti da `indexes/vector_index.json` per ogni sezione, collega i blocchi codice in `project.db`, e scrive un file Markdown per sezione (`docs/<NN>-<slug>.md`) più un manifest fonti (`docs/sources/<NN>-<slug>.sources.json`). Il backend attuale è estrattivo e locale: non chiama ancora un LLM e non inventa contenuto non presente nelle fonti recuperate.
+**Exit code:** 0 = sezioni generate o preservate. 1 = progetto sconosciuto, `config.yaml` non valido, outline mancante (`run 'videodoc outline' first`), indice vettoriale mancante (`run 'videodoc index' first`), indice corrotto/non ricercabile, nessun video registrato, o problema strutturale su `project.db`.
+**Prerequisito:** richiede `videodoc outline` e `videodoc index`; `videodoc chunk`/`embed` restano prerequisiti indiretti dell'indice.
+**Esempio:**
+```
+$ videodoc generate corso-software-x --top-k 6
+Project: corso-software-x
++-------------+
+| Generated | 8 |
+| Skipped   | 0 |
++-------------+
+Generated: .../corso-software-x/docs/01-introduzione.md
+```
+**Vedi anche:** [features/markdown-generation.md](features/markdown-generation.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

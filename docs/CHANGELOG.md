@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Markdown section generation
+- Added `videodoc generate`: reads `docs/outline.md`, retrieves relevant chunks from the local vector index, links code blocks from `project.db`, and writes one extractive Markdown file per outline section plus `docs/sources/*.sources.json` manifests — see [features/markdown-generation.md](features/markdown-generation.md).
+- Added `core/services/documentation_service.py` for outline parsing, retrieval-backed section generation, source/code reference rendering, manual-edit preservation, and `--force` regeneration.
+- Added `core/models/document_section.py` for generated section source manifests.
+- Added service, model and CLI tests for section generation, source manifest roundtrip, existing-section skips, forced regeneration, missing outline and missing index handling.
+- Docs: README §26, `docs/commands.md`, `RUN.md`, and `docs/features/markdown-generation.md` now document `videodoc generate`.
+
 ## Unreleased — Documentation outline generation
 - Added `videodoc outline`: generates a manually editable `docs/outline.md` from registered videos, chunk topics/summaries, transcript/OCR snippets, code blocks, and optional `sources.yaml` attachment/codebase entries — see [features/documentation-outline.md](features/documentation-outline.md).
 - Added `core/services/outline_service.py` with deterministic section assignment, code/source inclusion, manual-edit preservation by default, and `--force` regeneration support.

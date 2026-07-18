@@ -1843,6 +1843,8 @@ Struttura consigliata:
 
 Ogni sezione deve contenere il nome del video e i timestamp.
 
+Nota implementativa: questa fase è implementata dal comando **`videodoc generate`**. Il comando legge `docs/outline.md`, recupera fonti dall'indice locale con lo stesso `RetrievalService` usato da `videodoc ask`, collega eventuali blocchi codice di `project.db`, genera un file Markdown per ogni sezione (`docs/<NN>-<slug>.md`) e registra le fonti in `docs/sources/<NN>-<slug>.sources.json`. Il backend attuale è estrattivo e locale, non ancora LLM: le sezioni usano solo estratti recuperati e marcano i vuoti come punti da revisionare. I file sezione già esistenti non vengono sovrascritti salvo `--force`, per preservare modifiche manuali. Vedi `docs/features/markdown-generation.md`.
+
 ---
 
 # 27. Fase 14 — Revisione, validazione e controllo qualità

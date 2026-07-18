@@ -8,6 +8,7 @@ from videodoc.cli.commands import (
     embed,
     extract_audio,
     frames,
+    generate,
     ingest,
     index,
     init,
@@ -40,6 +41,7 @@ app.command("embed")(embed.embed_command)
 app.command("index")(index.index_command)
 app.command("ask")(ask.ask_command)
 app.command("outline")(outline.outline_command)
+app.command("generate")(generate.generate_command)
 app.command("doctor")(doctor.doctor_command)
 app.command("setup")(setup.setup_command)
 
