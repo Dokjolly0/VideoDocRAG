@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Documentation review reports
+- Added `videodoc review`: checks generated Markdown sections and `docs/sources/*.sources.json` manifests, then writes `docs/review_report.md` and `docs/review_report.json` — see [features/documentation-review.md](features/documentation-review.md).
+- Added deterministic review checks for required Markdown headings, balanced code fences, video/timestamp references, source citations, basic anti-hallucination overlap against indexed source text, duplicate code blocks, and code classification.
+- Added `core/models/document_review.py` and `core/services/review_service.py`.
+- Added model, service and CLI tests for clean reviews, missing source manifests, uncited claims, low-confidence code classification and missing generated sections.
+- Docs: README §27, `docs/commands.md`, `RUN.md`, and `docs/features/documentation-review.md` now document `videodoc review`.
+
 ## Unreleased — Markdown section generation
 - Added `videodoc generate`: reads `docs/outline.md`, retrieves relevant chunks from the local vector index, links code blocks from `project.db`, and writes one extractive Markdown file per outline section plus `docs/sources/*.sources.json` manifests — see [features/markdown-generation.md](features/markdown-generation.md).
 - Added `core/services/documentation_service.py` for outline parsing, retrieval-backed section generation, source/code reference rendering, manual-edit preservation, and `--force` regeneration.

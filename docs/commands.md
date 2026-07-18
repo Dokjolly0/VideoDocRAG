@@ -420,6 +420,28 @@ Generated: .../corso-software-x/docs/01-introduzione.md
 
 ---
 
+## review
+
+**Sintassi:** `videodoc review <project>`
+**Descrizione:** Controlla le sezioni generate (`docs/[0-9][0-9]-*.md`) e i rispettivi manifest `docs/sources/*.sources.json`, verifica struttura Markdown, fonti, video, timestamp, citazioni, overlap con i testi indicizzati, duplicati di codice e classificazione dei blocchi codice. Scrive `docs/review_report.md` e `docs/review_report.json`; non modifica i Markdown.
+**Exit code:** 0 = review completata, anche se il report contiene issue da correggere. 1 = progetto sconosciuto, `config.yaml` non valido, nessuna sezione generata (`run 'videodoc generate' first`), manifest review/section corrotto, indice vettoriale corrotto, o errore di scrittura report.
+**Prerequisito:** richiede `videodoc generate`; l'indice vettoriale consente il controllo anti-allucinazione con overlap lessicale sui record sorgente.
+**Esempio:**
+```
+$ videodoc review corso-software-x
+Project: corso-software-x
++----------------------------------------------+
+| Sections | 8                                |
+| Issues   | 0                                |
+| Errors   | 0                                |
+| Warnings | 0                                |
+| Report   | .../corso-software-x/docs/review_report.md |
++----------------------------------------------+
+```
+**Vedi anche:** [features/documentation-review.md](features/documentation-review.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

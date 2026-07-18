@@ -1888,6 +1888,8 @@ needs_review
 
 Se il codice deriva da OCR incerto, deve essere segnalato.
 
+Nota implementativa: questa fase è implementata dal comando **`videodoc review`**. Il comando legge le sezioni `docs/[0-9][0-9]-*.md` e i manifest `docs/sources/*.sources.json`, controlla struttura Markdown, presenza di fonti/video/timestamp, citazioni, overlap lessicale con i record indicizzati, duplicati di codice e classificazione dei blocchi codice (`verified`, `high_confidence`, `ocr_extracted`, `needs_review`; `reconstructed` resta riservato a una futura modalità assistiva). Produce `docs/review_report.md` e `docs/review_report.json` senza modificare i Markdown generati. Vedi `docs/features/documentation-review.md`.
+
 ---
 
 # 28. Fase 15 — Export della documentazione

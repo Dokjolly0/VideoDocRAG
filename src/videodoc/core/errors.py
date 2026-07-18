@@ -100,6 +100,10 @@ class InvalidDocumentationSectionManifestError(VideoDocError):
     """Raised when a generated documentation section source manifest is malformed."""
 
 
+class DocumentationReviewUnavailableError(VideoDocError):
+    """Raised when documentation review has no generated Markdown sections to inspect."""
+
+
 class OCREngineUnavailableError(VideoDocError):
     """Raised once, up front, when at least one video needs fresh OCR but the 'rapidocr'
     package cannot be imported -- checked a single time per run rather than once per frame.

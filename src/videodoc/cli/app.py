@@ -17,6 +17,7 @@ from videodoc.cli.commands import (
     ocr,
     outline,
     path as path_cmd,
+    review,
     scan,
     setup,
     transcribe,
@@ -42,6 +43,7 @@ app.command("index")(index.index_command)
 app.command("ask")(ask.ask_command)
 app.command("outline")(outline.outline_command)
 app.command("generate")(generate.generate_command)
+app.command("review")(review.review_command)
 app.command("doctor")(doctor.doctor_command)
 app.command("setup")(setup.setup_command)
 
