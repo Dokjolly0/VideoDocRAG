@@ -328,6 +328,36 @@ Project: corso-software-x
 
 ---
 
+## index
+
+**Sintassi:** `videodoc index <project>`
+**Descrizione:** Legge i manifest embedding in `indexes/embeddings/<id>.json` e costruisce `indexes/vector_index.json`, un indice vettoriale locale (`backend: local-json`, distanza cosine) con un record per embedding e payload ricco pronto per la fase retrieval. `config.retrieval.vector_db` viene registrato come target configurato (default `qdrant`), ma il comando non richiede ancora Qdrant.
+**Exit code:** 0 = successo o skip idempotente, anche con errori per-video su manifest embedding corrotti (stampati come `Warning`). 1 = progetto sconosciuto, `config.yaml` non valido, nessun video ancora registrato (`ingest` mai eseguito), vector DB configurato non supportato, o problema strutturale su `project.db`.
+**Prerequisito:** richiede `videodoc embed` per produrre input utili; un progetto senza manifest embedding viene saltato senza errore.
+**Esempio:**
+```
+$ videodoc index corso-software-x
+Project: corso-software-x
++---------------+
+| Indexed | yes |
+| Skipped | no  |
+| Videos  | 8   |
+| Records | 120 |
++---------------+
+
+$ videodoc index corso-software-x
+Project: corso-software-x
++---------------+
+| Indexed | no  |
+| Skipped | yes |
+| Videos  | 8   |
+| Records | 120 |
++---------------+
+```
+**Vedi anche:** [features/vector-indexing.md](features/vector-indexing.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

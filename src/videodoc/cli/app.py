@@ -8,6 +8,7 @@ from videodoc.cli.commands import (
     extract_audio,
     frames,
     ingest,
+    index,
     init,
     link,
     list_projects,
@@ -34,6 +35,7 @@ app.command("ocr")(ocr.ocr_command)
 app.command("code")(code.code_command)
 app.command("chunk")(chunk.chunk_command)
 app.command("embed")(embed.embed_command)
+app.command("index")(index.index_command)
 app.command("doctor")(doctor.doctor_command)
 app.command("setup")(setup.setup_command)
 

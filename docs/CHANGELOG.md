@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Local vector indexing
+- Added `videodoc index`: reads embedding manifests from `indexes/embeddings/<id>.json` and writes a project-level local vector index to `indexes/vector_index.json`, with vectors plus retrieval-ready payloads — see [features/vector-indexing.md](features/vector-indexing.md).
+- Added `core/models/vector_index.py`, `core/utils/vector_index.py`, and `core/services/index_service.py` with input signatures over embedding manifests so the index is rebuilt only when embedding records change.
+- Implemented a `local-json` cosine-distance backend as the current offline index target while preserving `config.retrieval.vector_db` (default `qdrant`) as the configured target in the index manifest.
+- Added tests for vector-index helpers/model loading, indexing service idempotency/error handling/corrupt-index replacement, and CLI wiring.
+- Docs: README §23, `docs/commands.md`, `RUN.md`, and `docs/features/vector-indexing.md` now document `videodoc index`.
+
 ## Unreleased — Chunk embeddings
 - Added `videodoc embed`: reads chunk manifests and writes per-video embedding manifests in `indexes/embeddings/<id>.json`, with records for transcript, OCR, code, summary and combined text — see [features/embedding.md](features/embedding.md).
 - Added a deterministic local feature-hashing embedding backend (`core/utils/embedding.py`) with 256-dimensional L2-normalized vectors, no downloads, no services, and no new runtime dependencies. `config.embedding.provider`/`model` are still recorded for idempotency and future model-backed engines.

@@ -1732,6 +1732,8 @@ Payload consigliati:
 - `contains_code`;
 - `confidence`.
 
+Nota implementativa: questa fase è implementata dal comando **`videodoc index`**. Il comando legge i manifest embedding (`indexes/embeddings/<video_id>.json`) e costruisce un indice vettoriale locale in `indexes/vector_index.json`, con un record per embedding e payload ricco (`project_id`, `video_id`, `video_name`, `chunk_id`, `embedding_type`, timestamp, topic, `source_type`, `contains_code`, `language`, `confidence`, `text`). Per evitare una dipendenza runtime aggiuntiva e mantenere la pipeline verificabile offline, il backend attuale è **`local-json`** con distanza `cosine`; `config.retrieval.vector_db` resta registrato come target configurato (default `"qdrant"`) ma non avvia ancora Qdrant. L'idempotenza confronta le firme dei manifest embedding e riscrive l'indice solo quando gli embedding cambiano o cambia il backend configurato. Vedi `docs/features/vector-indexing.md`.
+
 ---
 
 # 24. Fase 11 — Retrieval e RAG
