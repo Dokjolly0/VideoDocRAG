@@ -730,6 +730,23 @@ Come per l'outline, i file Markdown già esistenti vengono preservati. Usa `--fo
 videodoc generate corso-software-x --force
 ```
 
+Per rigenerare una sola sezione, usa `regenerate` con il titolo, lo slug o il numero dell'outline:
+
+```bash
+videodoc regenerate corso-software-x --section "Configurazione database"
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Regenerated | 1 |
+| Skipped     | 0 |
++---------------+
+Regenerated: .../docs/04-configurazione-database.md
+```
+
+Le altre sezioni restano intatte, così le modifiche manuali già fatte non vengono sovrascritte.
+
 ### 5.18.1 Indicizzare la documentazione generata (`index-docs`)
 
 `ask`/`chat` in modalità `docs` costruiscono questo indice automaticamente, ma puoi generarlo esplicitamente dopo `generate`:

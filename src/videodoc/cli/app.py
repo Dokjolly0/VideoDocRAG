@@ -21,6 +21,7 @@ from videodoc.cli.commands import (
     ocr,
     outline,
     path as path_cmd,
+    regenerate,
     review,
     scan,
     setup,
@@ -54,6 +55,7 @@ app.command("status")(status.status_command)
 app.command("inspect")(inspect.inspect_command)
 app.command("outline")(outline.outline_command)
 app.command("generate")(generate.generate_command)
+app.command("regenerate")(regenerate.regenerate_command)
 app.command("review")(review.review_command)
 app.command("export")(export.export_command)
 app.command("doctor")(doctor.doctor_command)

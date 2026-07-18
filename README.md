@@ -3003,6 +3003,8 @@ Rigenera solo una sezione.
 videodoc regenerate corso-software-x --section "Configurazione database"
 ```
 
+Nota implementativa: questa modalità è disponibile dal comando **`videodoc regenerate`**. Il comando riusa `DocumentationService`, filtra `docs/outline.md` per titolo/slug/numero sezione e rigenera solo il Markdown e il manifest fonti della sezione selezionata, lasciando intatti gli altri file già revisionati manualmente. Vedi `docs/features/markdown-generation.md`.
+
 ## 35.4 Modalità ispezione
 
 Mostra fonti grezze collegate a un timestamp.

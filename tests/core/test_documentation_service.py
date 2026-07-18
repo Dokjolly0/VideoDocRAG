@@ -163,3 +163,43 @@ def test_missing_index_raises_actionable_error(tmp_path):
 
     with pytest.raises(VectorIndexUnavailableError, match="videodoc index"):
         DocumentationService(project_dir, config).run()
+
+
+def test_regenerate_section_only_rewrites_matching_section(tmp_path):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_project(project_dir, config)
+    _seed_index(project_dir, config)
+    docs = project_dir / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    (docs / "outline.md").write_text(
+        "# Documentazione Demo Software\n\n"
+        "## 1. Configurazione ambiente\n\n"
+        "Obiettivo: descrivere la configurazione del database.\n\n"
+        "## 2. Deploy\n\n"
+        "Obiettivo: descrivere il deploy.\n",
+        encoding="utf-8",
+    )
+    first = docs / "01-configurazione-ambiente.md"
+    second = docs / "02-deploy.md"
+    first.write_text("# Vecchia configurazione\n", encoding="utf-8")
+    second.write_text("# Manuale deploy\n", encoding="utf-8")
+
+    result = DocumentationService(project_dir, config).run(force=True, section="Configurazione ambiente")
+
+    assert len(result.generated) == 1
+    assert "# Configurazione ambiente" in first.read_text(encoding="utf-8")
+    assert second.read_text(encoding="utf-8") == "# Manuale deploy\n"
+
+
+def test_regenerate_unknown_section_raises_actionable_error(tmp_path):
+    project_dir = tmp_path / "demo"
+    project_dir.mkdir()
+    config = _config()
+    _seed_project(project_dir, config)
+    _seed_outline(project_dir)
+    _seed_index(project_dir, config)
+
+    with pytest.raises(DocumentationOutlineUnavailableError, match="Available sections"):
+        DocumentationService(project_dir, config).run(force=True, section="Missing")

@@ -53,8 +53,16 @@ class DocumentationService:
         self.outline_path = self.output_dir / "outline.md"
         self.sources_dir = self.output_dir / "sources"
 
-    def run(self, *, force: bool = False, top_k: int | None = None) -> DocumentationGenerationResult:
+    def run(
+        self,
+        *,
+        force: bool = False,
+        top_k: int | None = None,
+        section: str | None = None,
+    ) -> DocumentationGenerationResult:
         outline_sections = self._load_outline()
+        if section is not None:
+            outline_sections = _select_outline_sections(outline_sections, section)
         db_path = self.project_dir / self.config.paths.database
         if not db_path.exists():
             raise NoVideosFoundError(
@@ -154,6 +162,31 @@ def _section_slug(section: _OutlineSection) -> str:
         return slugify(section.title)
     except ValueError:
         return f"section-{section.index:02d}"
+
+
+def _select_outline_sections(sections: list[_OutlineSection], selector: str) -> list[_OutlineSection]:
+    normalized = selector.strip().lower()
+    if not normalized:
+        raise ValueError("Section selector must not be empty.")
+    try:
+        selector_slug = slugify(selector)
+    except ValueError:
+        selector_slug = normalized
+
+    matches = [
+        section for section in sections
+        if normalized in {section.title.lower(), str(section.index), f"{section.index:02d}"}
+        or selector_slug == _section_slug(section)
+    ]
+    if not matches:
+        available = ", ".join(f"{section.index}. {section.title}" for section in sections)
+        raise DocumentationOutlineUnavailableError(
+            f"Section '{selector}' was not found in docs/outline.md. Available sections: {available}."
+        )
+    if len(matches) > 1:
+        titles = ", ".join(f"{section.index}. {section.title}" for section in matches)
+        raise DocumentationOutlineUnavailableError(f"Section selector '{selector}' is ambiguous: {titles}.")
+    return matches
 
 
 def _section_query(section: _OutlineSection) -> str:

@@ -544,6 +544,26 @@ Generated: .../corso-software-x/docs/01-introduzione.md
 
 ---
 
+## regenerate
+
+**Sintassi:** `videodoc regenerate <project> --section SECTION [--top-k N]`
+**Descrizione:** Rigenera una sola sezione già definita in `docs/outline.md`, identificandola per titolo, slug o numero outline (`1`, `01`). Usa lo stesso motore di `generate` con `force=True`, quindi riscrive solo `docs/<NN>-<slug>.md` e il relativo manifest `docs/sources/<NN>-<slug>.sources.json`, preservando tutte le altre sezioni modificate a mano.
+**Exit code:** 0 = sezione rigenerata. 1 = progetto sconosciuto, `config.yaml` non valido, outline mancante, sezione non trovata/ambigua, indice vettoriale mancante o corrotto, nessun video registrato, o problema strutturale su `project.db`.
+**Prerequisito:** richiede gli stessi prerequisiti di `generate`: `videodoc outline` e `videodoc index`.
+**Esempio:**
+```
+$ videodoc regenerate corso-software-x --section "Configurazione database"
+Project: corso-software-x
++---------------+
+| Regenerated | 1 |
+| Skipped     | 0 |
++---------------+
+Regenerated: .../docs/04-configurazione-database.md
+```
+**Vedi anche:** [features/markdown-generation.md](features/markdown-generation.md)
+
+---
+
 ## review
 
 **Sintassi:** `videodoc review <project>`

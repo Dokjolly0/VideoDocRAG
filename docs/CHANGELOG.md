@@ -13,6 +13,12 @@
 - Added CLI tests for populated and empty documentation indexes plus unknown-project failure.
 - Docs: README §29, `docs/commands.md`, `RUN.md`, and `docs/features/chat.md` now document `videodoc index-docs`.
 
+## Unreleased — Selective documentation regeneration
+- Added `videodoc regenerate --section SECTION`: regenerates one outline section by title, slug, or outline number while preserving all other generated Markdown files.
+- Extended `DocumentationService.run()` with selective outline filtering for partial regeneration.
+- Added service and CLI tests for selected-section regeneration and unknown-section failures.
+- Docs: README §35.3, `docs/commands.md`, `RUN.md`, and `docs/features/markdown-generation.md` now document `videodoc regenerate`.
+
 ## Unreleased — Pipeline status and timestamp inspection
 - Added `videodoc status`: non-destructive project pipeline summary over `sources.yaml`, `project.db`, `workdir/`, `indexes/`, `docs/`, `exports/`, and saved chat sessions — see [features/status-inspect.md](features/status-inspect.md).
 - Added `videodoc inspect --timestamp HH:MM:SS [--video NAME]`: timestamp drill-down for transcript, frame/OCR, nearby code blocks, chunks, and generated documentation source manifests.
