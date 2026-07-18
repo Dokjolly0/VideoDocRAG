@@ -14,6 +14,7 @@ from videodoc.cli.commands import (
     link,
     list_projects,
     ocr,
+    outline,
     path as path_cmd,
     scan,
     setup,
@@ -38,6 +39,7 @@ app.command("chunk")(chunk.chunk_command)
 app.command("embed")(embed.embed_command)
 app.command("index")(index.index_command)
 app.command("ask")(ask.ask_command)
+app.command("outline")(outline.outline_command)
 app.command("doctor")(doctor.doctor_command)
 app.command("setup")(setup.setup_command)
 

@@ -379,6 +379,27 @@ Sources:
 
 ---
 
+## outline
+
+**Sintassi:** `videodoc outline <project> [--force]`
+**Descrizione:** Genera `docs/outline.md`, un indice Markdown modificabile manualmente prima della futura generazione sezioni. Usa video registrati, chunk (`topic`, `summary`, transcript/OCR), blocchi codice e, quando disponibile, `sources.yaml` per allegati e codebase. Se `docs/outline.md` esiste già, lo preserva e segnala skip; `--force` lo rigenera.
+**Exit code:** 0 = outline generato o preservato. 1 = progetto sconosciuto, `config.yaml` non valido, nessun video ancora registrato (`ingest` mai eseguito), nessun chunk disponibile (`run 'videodoc chunk' first`), o problema strutturale su `project.db`.
+**Prerequisito:** richiede `videodoc chunk` per produrre fonti strutturate utili.
+**Esempio:**
+```
+$ videodoc outline corso-software-x
+Project: corso-software-x
++----------------------------------------------+
+| Generated | yes                              |
+| Skipped   | no                               |
+| Sections  | 8                                |
+| Outline   | .../corso-software-x/docs/outline.md |
++----------------------------------------------+
+```
+**Vedi anche:** [features/documentation-outline.md](features/documentation-outline.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

@@ -88,6 +88,10 @@ class VectorIndexNotSupportedError(VideoDocError):
     """Raised when config.retrieval.vector_db names a vector backend that is not implemented."""
 
 
+class OutlineSourceUnavailableError(VideoDocError):
+    """Raised when documentation outline generation has no chunk/source material to use."""
+
+
 class OCREngineUnavailableError(VideoDocError):
     """Raised once, up front, when at least one video needs fresh OCR but the 'rapidocr'
     package cannot be imported -- checked a single time per run rather than once per frame.

@@ -1799,6 +1799,8 @@ Output:
 
 L’outline deve essere salvato e modificabile manualmente.
 
+Nota implementativa: questa fase è implementata dal comando **`videodoc outline`**. Il comando genera `docs/outline.md` a partire da video registrati, topic/sommari dei chunk, transcript/OCR, blocchi codice e manifest `sources.yaml` quando disponibile. L'output è deterministico e locale, senza chiamate LLM: assegna le fonti candidate alle sezioni standard dell'indice e conserva video/timestamp per la generazione successiva. Poiché l'outline deve poter essere modificato manualmente, una riesecuzione non sovrascrive un `docs/outline.md` già esistente; usare `--force` per rigenerarlo. Vedi `docs/features/documentation-outline.md`.
+
 ---
 
 # 26. Fase 13 — Generazione delle sezioni Markdown

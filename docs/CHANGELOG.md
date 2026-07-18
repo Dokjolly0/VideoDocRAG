@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Documentation outline generation
+- Added `videodoc outline`: generates a manually editable `docs/outline.md` from registered videos, chunk topics/summaries, transcript/OCR snippets, code blocks, and optional `sources.yaml` attachment/codebase entries — see [features/documentation-outline.md](features/documentation-outline.md).
+- Added `core/services/outline_service.py` with deterministic section assignment, code/source inclusion, manual-edit preservation by default, and `--force` regeneration support.
+- Added `OutlineSourceUnavailableError` for projects without chunk material and actionable guidance to run `videodoc chunk`.
+- Added service and CLI tests for fresh outline generation, source/code inclusion, existing-outline skip behavior, forced regeneration, and missing upstream data.
+- Docs: README §25, `docs/commands.md`, `RUN.md`, and `docs/features/documentation-outline.md` now document `videodoc outline`.
+
 ## Unreleased — Local retrieval and extractive RAG
 - Added `videodoc ask`: embeds a user question, searches `indexes/vector_index.json` with cosine similarity, deduplicates repeated embedding records for the same chunk, and prints a grounded answer plus numbered sources — see [features/retrieval-rag.md](features/retrieval-rag.md).
 - Added `core/services/retrieval_service.py` with local vector-index loading, source ranking, no-source fallback answers, and explicit validation for non-local/corrupt indexes.

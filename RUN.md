@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (generazione documentazione, revisione/export, chat — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (generazione sezioni Markdown, revisione/export, chat — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -649,7 +649,33 @@ Il comando usa lo stesso embedding locale deterministico (`feature-hashing`) del
 
 Se l'indice manca, `ask` fallisce con un suggerimento esplicito a eseguire prima `videodoc index`.
 
-### 5.17 Verificare lo stato dell'ambiente (`doctor`)
+### 5.17 Generare l'outline della documentazione (`outline`)
+
+Crea `docs/outline.md`, modificabile manualmente prima della futura generazione delle sezioni:
+
+```bash
+videodoc outline corso-software-x
+```
+
+```text
+Project: corso-software-x
++----------------------------------------------+
+| Generated | yes                              |
+| Skipped   | no                               |
+| Sections  | 8                                |
+| Outline   | .../corso-software-x/docs/outline.md |
++----------------------------------------------+
+```
+
+Il comando usa i video registrati, topic e sommari dei chunk, transcript/OCR, blocchi codice e, se disponibile, `sources.yaml` per allegati e codebase. Non chiama ancora un LLM: assegna deterministicamente le fonti candidate alle sezioni standard del README e conserva video/timestamp per la fase successiva.
+
+`docs/outline.md` è pensato per essere ritoccato dall'utente: se il file esiste già, una riesecuzione lo preserva e segnala `Skipped: yes`. Usa `--force` solo quando vuoi rigenerarlo dai chunk correnti:
+
+```bash
+videodoc outline corso-software-x --force
+```
+
+### 5.18 Verificare lo stato dell'ambiente (`doctor`)
 
 Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
 
@@ -671,7 +697,7 @@ Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode —
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
-### 5.18 Applicare le correzioni automaticamente (`setup`)
+### 5.19 Applicare le correzioni automaticamente (`setup`)
 
 Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
 
@@ -820,7 +846,7 @@ Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.all
 FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
 
 **`videodoc transcribe` fallisce con un errore che menziona `cublas` o una libreria CUDA mancante.**
-Esegui prima `videodoc doctor` (§5.17): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.18) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
+Esegui prima `videodoc doctor` (§5.18): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.19) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
 
 `faster-whisper` rileva automaticamente l'hardware disponibile e, su una macchina dove viene individuata una GPU ma mancano le librerie runtime CUDA (es. `cublas64_12.dll` su Windows), fallisce invece di ripiegare in modo pulito sulla CPU. **Dove esattamente fallisce cambia il comportamento del comando**, e dipende da un dettaglio interno di `faster-whisper`/`ctranslate2` non controllabile da questo codice:
 - Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.
@@ -857,14 +883,12 @@ Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslat
 
 ## 9. Cosa non è ancora disponibile
 
-Questi step coprono la gestione dei progetti, la scansione delle fonti, l'ingestion dei video, l'estrazione audio, la trascrizione, l'estrazione frame e l'OCR. Non sono ancora implementati (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi step coprono gestione progetti, scansione fonti, ingestion video, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale e outline della documentazione. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
 - `videodoc sync-codebase` — sincronizzazione e indicizzazione della codebase;
-- `videodoc code` — riconoscimento ed estrazione del codice;
-- `videodoc chunk`, `index` — chunking ed embedding/indicizzazione vettoriale;
-- `videodoc outline`, `generate`, `review`, `export` — generazione e revisione della documentazione;
-- `videodoc ask`, `chat` — interrogazione RAG e chat sulla knowledge base;
+- `videodoc generate`, `review`, `export` — generazione sezioni, revisione ed export della documentazione;
+- `videodoc chat` — chat sulla knowledge base;
 - `videodoc status`, `inspect` — stato pipeline e ispezione puntuale;
 - l'interfaccia GUI (`videodoc gui`).
 
-Nessuno di questi comandi esiste ancora nella CLI: verranno aggiunti negli step successivi.
+Questi comandi verranno aggiunti negli step successivi.
