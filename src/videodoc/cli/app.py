@@ -1,6 +1,7 @@
 import typer
 
 from videodoc.cli.commands import (
+    chunk,
     code,
     doctor,
     extract_audio,
@@ -30,6 +31,7 @@ app.command("transcribe")(transcribe.transcribe_command)
 app.command("frames")(frames.frames_command)
 app.command("ocr")(ocr.ocr_command)
 app.command("code")(code.code_command)
+app.command("chunk")(chunk.chunk_command)
 app.command("doctor")(doctor.doctor_command)
 app.command("setup")(setup.setup_command)
 

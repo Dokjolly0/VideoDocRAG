@@ -519,7 +519,43 @@ Project: corso-software-x
 
 Se nessun video è ancora stato registrato (`ingest` non è mai stato eseguito), o se c'è un problema strutturale su `project.db`, il comando fallisce con `exit code` 1. Problemi per-video su manifest codice corrotti vengono stampati come `Warning` e non bloccano gli altri video.
 
-### 5.13 Verificare lo stato dell'ambiente (`doctor`)
+### 5.13 Creare i chunk temporali del progetto
+
+Per ogni video con trascrizione, OCR o blocchi codice già disponibili, crea chunk temporali in `workdir/<id>/chunks/<id>.json`, li registra nella tabella `chunks` di `project.db` e aggiorna `metadata.json` (`chunks_path`):
+
+```bash
+videodoc chunk corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Processed | 8 |
+| Skipped   | 0 |
++---------------+
+```
+
+Il transcript, quando presente, è la spina dorsale temporale: i segmenti vengono raggruppati tra `chunking.min_duration_seconds` e `chunking.max_duration_seconds` (default 90-480s), spezzando anche su pause evidenti. Ogni chunk viene arricchito con OCR e blocchi codice nello stesso intervallo; con `chunking.include_nearby_frames: true`, frame e codice entro 5 secondi dai bordi vengono inclusi per non perdere screenshot campionati appena prima o dopo il parlato.
+
+Se non c'è transcript, il comando usa comunque timestamp OCR/codice per creare finestre visive. Ogni blocco codice genera inoltre un chunk separato `source_type="code"`, utile per la fase embedding/retrieval.
+
+È idempotente sugli input strutturati: cambi a transcript, OCR, `contains_code`, code blocks o impostazioni `chunking.*` innescano una nuova generazione; se nulla cambia, il comando salta la generazione ma riallinea comunque `project.db` e `metadata.json` dal manifest.
+
+```bash
+videodoc chunk corso-software-x
+```
+
+```text
+Project: corso-software-x
++---------------+
+| Processed | 0 |
+| Skipped   | 8 |
++---------------+
+```
+
+Un video senza transcript, OCR o codice viene saltato senza errore. Se nessun video è ancora stato registrato (`ingest` mai eseguito), o se c'è un problema strutturale su `project.db`, il comando fallisce con `exit code` 1. Problemi per-video su manifest chunk corrotti vengono stampati come `Warning`.
+
+### 5.14 Verificare lo stato dell'ambiente (`doctor`)
 
 Comando **senza argomento progetto**: verifica Python, FFmpeg, `faster-whisper`, GPU/CUDA, registro locale e cartella progetti di default. Non modifica nulla:
 
@@ -541,7 +577,7 @@ Le parole `OK`/`WARN`/`ERROR` sono testo ASCII colorato, non simboli Unicode —
 
 `exit code` `1` solo se almeno un controllo è in stato `error` (i `warning`, come un problema CUDA rilevato ma non bloccante, non cambiano l'exit code).
 
-### 5.14 Applicare le correzioni automaticamente (`setup`)
+### 5.15 Applicare le correzioni automaticamente (`setup`)
 
 Esegue gli stessi controlli di `doctor` e offre di correggerli. Le correzioni via pip (es. i pacchetti CUDA opzionali) vengono applicate **senza chiedere conferma** (operazione nel venv, reversibile); le correzioni di sistema (FFmpeg via `winget`/`apt`/`brew`) chiedono **conferma esplicita** prima di essere eseguite; un'eventuale correzione puramente manuale viene solo stampata, mai eseguita:
 
@@ -690,7 +726,7 @@ Verifica che l'estensione dei file sia tra quelle riconosciute (`config.scan.all
 FFmpeg non è installato o `ffprobe` non è raggiungibile dal terminale corrente — vedi §1 per l'installazione per OS, poi verifica con `ffprobe -version`. `ingest` non crea nulla (né `project.db` né cartelle) quando questo controllo fallisce.
 
 **`videodoc transcribe` fallisce con un errore che menziona `cublas` o una libreria CUDA mancante.**
-Esegui prima `videodoc doctor` (§5.13): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.14) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
+Esegui prima `videodoc doctor` (§5.14): il check "GPU / CUDA" rileva esattamente questo problema (device rilevato ma libreria non caricabile) senza dover prima lanciare `transcribe` per scoprirlo. `videodoc setup` (§5.15) applica automaticamente la parte pip-installabile della correzione qui sotto — resta comunque il passaggio manuale del `PATH` (mai automatizzabile da nessun comando, vedi perché sotto).
 
 `faster-whisper` rileva automaticamente l'hardware disponibile e, su una macchina dove viene individuata una GPU ma mancano le librerie runtime CUDA (es. `cublas64_12.dll` su Windows), fallisce invece di ripiegare in modo pulito sulla CPU. **Dove esattamente fallisce cambia il comportamento del comando**, e dipende da un dettaglio interno di `faster-whisper`/`ctranslate2` non controllabile da questo codice:
 - Se il problema si manifesta solo alla prima trascrizione effettiva (osservato durante lo sviluppo: il caricamento del modello riesce, l'errore emerge alla prima chiamata reale) — non è un crash del comando: il video interessato viene segnalato con un `Warning` e saltato, gli altri (e le esecuzioni successive) continuano normalmente, `exit code` resta `0`.

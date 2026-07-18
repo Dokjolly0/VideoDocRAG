@@ -76,6 +76,21 @@ CREATE TABLE IF NOT EXISTS code_blocks (
 );
 """
 
+_CREATE_CHUNKS_TABLE = """
+CREATE TABLE IF NOT EXISTS chunks (
+    id TEXT PRIMARY KEY,
+    video_id TEXT NOT NULL,
+    start_seconds REAL NOT NULL,
+    end_seconds REAL NOT NULL,
+    topic TEXT,
+    summary TEXT,
+    transcript TEXT,
+    ocr_text TEXT,
+    metadata_json TEXT,
+    FOREIGN KEY(video_id) REFERENCES videos(id)
+);
+"""
+
 
 def _connect(db_path: Path) -> sqlite3.Connection:
     return sqlite3.connect(db_path, timeout=30)
@@ -155,6 +170,19 @@ class CodeBlockRow:
     verified: bool = False
 
 
+@dataclass(frozen=True)
+class ChunkRow:
+    id: str
+    video_id: str
+    start_seconds: float
+    end_seconds: float
+    topic: str | None
+    summary: str | None
+    transcript: str | None
+    ocr_text: str | None
+    metadata_json: str | None
+
+
 def ensure_schema(db_path: Path) -> None:
     """Create every project.db table if it doesn't exist yet. Idempotent."""
     try:
@@ -170,6 +198,7 @@ def ensure_schema(db_path: Path) -> None:
             conn.execute(_CREATE_TRANSCRIPT_SEGMENTS_TABLE)
             conn.execute(_CREATE_FRAMES_TABLE)
             conn.execute(_CREATE_CODE_BLOCKS_TABLE)
+            conn.execute(_CREATE_CHUNKS_TABLE)
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot initialize schema in {db_path}: {exc}") from exc
 
@@ -457,3 +486,48 @@ def list_code_blocks(db_path: Path, video_id: str) -> list[CodeBlockRow]:
     except sqlite3.Error as exc:
         raise DatabaseError(f"Cannot list code blocks for video '{video_id}' in {db_path}: {exc}") from exc
     return [CodeBlockRow(*row[:8], verified=bool(row[8])) for row in rows]
+
+
+def replace_chunks(db_path: Path, video_id: str, chunks: list[ChunkRow]) -> None:
+    """Full replace of generated chunks for one video."""
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            conn.execute("DELETE FROM chunks WHERE video_id = ?", (video_id,))
+            conn.executemany(
+                "INSERT INTO chunks (id, video_id, start_seconds, end_seconds, topic, summary, transcript, ocr_text, metadata_json) "
+                "VALUES (:id, :video_id, :start_seconds, :end_seconds, :topic, :summary, :transcript, :ocr_text, :metadata_json)",
+                [
+                    {
+                        "id": c.id,
+                        "video_id": c.video_id,
+                        "start_seconds": c.start_seconds,
+                        "end_seconds": c.end_seconds,
+                        "topic": c.topic,
+                        "summary": c.summary,
+                        "transcript": c.transcript,
+                        "ocr_text": c.ocr_text,
+                        "metadata_json": c.metadata_json,
+                    }
+                    for c in chunks
+                ],
+            )
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot write chunks for video '{video_id}' to {db_path}: {exc}") from exc
+
+
+def list_chunks(db_path: Path, video_id: str) -> list[ChunkRow]:
+    try:
+        with closing(_connect(db_path)) as conn, conn:
+            table_exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'"
+            ).fetchone()
+            if table_exists is None:
+                return []
+            rows = conn.execute(
+                "SELECT id, video_id, start_seconds, end_seconds, topic, summary, transcript, ocr_text, metadata_json "
+                "FROM chunks WHERE video_id = ? ORDER BY id",
+                (video_id,),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise DatabaseError(f"Cannot list chunks for video '{video_id}' in {db_path}: {exc}") from exc
+    return [ChunkRow(*row) for row in rows]

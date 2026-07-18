@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Intelligent chunking
+- Added `videodoc chunk`: for every video with transcript/OCR/code inputs, builds deterministic time chunks in `workdir/<id>/chunks/<id>.json`, replaces that video's rows in the new `chunks` table, and updates `metadata.json` (`chunks_path`) — see [features/chunking.md](features/chunking.md).
+- Added transcript-backed windowing with config-driven duration bounds (`chunking.min_duration_seconds` / `max_duration_seconds`) plus pause splitting, OCR/code enrichment inside each time interval, and OCR/code-only fallback windows when transcript is not available.
+- Added one code-specific chunk per `code_blocks` row (`source_type="code"`) so the future embedding/indexing phase can index code as a standalone retrieval document while still keeping it attached to surrounding narrative chunks.
+- Added `core/models/chunk_manifest.py` with transcript/frame/code input signatures, ensuring reruns of transcription, OCR, code detection, or frame extraction trigger a fresh chunking pass instead of reusing stale chunks.
+- Added `replace_chunks()`/`list_chunks()` and `ChunkRow` in `core/storage/database.py`; chunking reads upstream tables only and writes only the `chunks` table plus `metadata.json`.
+- Added tests for manifest loading, DB helpers, chunking service idempotency/self-heal/reprocessing/fallback behavior, and CLI wiring.
+- Docs: README §21, `docs/commands.md`, `RUN.md`, and `docs/features/chunking.md` now document `videodoc chunk`.
+
 ## Unreleased — Code extraction from OCR
 - Added `videodoc code`: for every video with OCR already present, classifies OCR text, extracts code-like blocks, deduplicates repeated blocks across frames, writes `workdir/<id>/code/<id>.json`, replaces the video's rows in `project.db`'s new `code_blocks` table, updates only `frames.contains_code`, and writes `workdir/<id>/code/code_review_report.md` for blocks that need human review — see [features/code-extraction.md](features/code-extraction.md).
 - Added deterministic OCR-code classification and validation in `core/utils/code_detection.py`: parser-backed validation for JSON/YAML/Python; simple rule verification for terminal commands, file paths, and error messages; conservative classification for JavaScript/TypeScript/HTML/CSS/SQL/Dockerfile, marked for review in strict mode until parser-specific validation exists.

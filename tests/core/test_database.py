@@ -6,6 +6,7 @@ import pytest
 
 from videodoc.core.errors import DatabaseError
 from videodoc.core.storage.database import (
+    ChunkRow,
     CodeBlockRow,
     FrameOcrUpdate,
     FrameRow,
@@ -14,10 +15,12 @@ from videodoc.core.storage.database import (
     ensure_schema,
     get_video,
     list_code_blocks,
+    list_chunks,
     list_frames,
     list_transcript_segments,
     list_videos,
     replace_code_blocks,
+    replace_chunks,
     replace_frame_code_flags,
     replace_frames,
     replace_transcript_segments,
@@ -485,3 +488,68 @@ def test_code_block_helpers_wrap_sqlite_errors(tmp_path):
         replace_code_blocks(db_path, "demo", [])
     with pytest.raises(DatabaseError):
         list_code_blocks(db_path, "demo")
+
+
+def test_replace_and_list_chunks_roundtrip(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_chunks(
+        db_path,
+        "demo",
+        [
+            ChunkRow(
+                id="demo_chunk_0001",
+                video_id="demo",
+                start_seconds=0.0,
+                end_seconds=120.0,
+                topic="Introduzione",
+                summary="Si introduce il progetto.",
+                transcript="Si introduce il progetto.",
+                ocr_text="npm run dev",
+                metadata_json='{"source_type":"transcript_ocr_code"}',
+            )
+        ],
+    )
+
+    assert list_chunks(db_path, "demo") == [
+        ChunkRow(
+            id="demo_chunk_0001",
+            video_id="demo",
+            start_seconds=0.0,
+            end_seconds=120.0,
+            topic="Introduzione",
+            summary="Si introduce il progetto.",
+            transcript="Si introduce il progetto.",
+            ocr_text="npm run dev",
+            metadata_json='{"source_type":"transcript_ocr_code"}',
+        )
+    ]
+
+
+def test_replace_chunks_replaces_not_appends(tmp_path):
+    db_path = tmp_path / "project.db"
+    ensure_schema(db_path)
+    upsert_video(db_path, _row())
+    replace_chunks(
+        db_path,
+        "demo",
+        [ChunkRow("demo_chunk_0001", "demo", 0.0, 60.0, "A", "A", "A", "", "{}")],
+    )
+    replace_chunks(
+        db_path,
+        "demo",
+        [ChunkRow("demo_chunk_0002", "demo", 60.0, 120.0, "B", "B", "B", "", "{}")],
+    )
+
+    rows = list_chunks(db_path, "demo")
+    assert [row.id for row in rows] == ["demo_chunk_0002"]
+
+
+def test_chunk_helpers_wrap_sqlite_errors(tmp_path):
+    db_path = tmp_path / "not-a-file"
+    db_path.mkdir()
+    with pytest.raises(DatabaseError):
+        replace_chunks(db_path, "demo", [])
+    with pytest.raises(DatabaseError):
+        list_chunks(db_path, "demo")

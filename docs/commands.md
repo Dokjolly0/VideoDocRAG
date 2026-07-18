@@ -276,6 +276,32 @@ Project: corso-software-x
 
 ---
 
+## chunk
+
+**Sintassi:** `videodoc chunk <project> [--workers N]`
+**Descrizione:** Per ogni video con transcript, OCR o blocchi codice disponibili, crea chunk temporali arricchiti in `workdir/<id>/chunks/<id>.json`, sostituisce le righe del video nella tabella `chunks`, e aggiorna `metadata.json` (`chunks_path`). Il transcript guida i confini quando presente; OCR e code blocks vengono agganciati allo stesso intervallo. Ogni blocco codice genera anche un chunk separato `source_type="code"` per l'indicizzazione futura del codice come documento autonomo.
+**Exit code:** 0 = successo, anche con errori per-video (manifest chunk corrotto su un singolo video: stampato come `Warning`, gli altri continuano). 1 = progetto sconosciuto, `config.yaml` non valido, nessun video ancora registrato (`ingest` mai eseguito), o problema strutturale su `project.db`.
+**Prerequisito:** usa dati già prodotti da `transcribe`, `ocr` e `code`; un video senza nessuno di questi input viene saltato silenziosamente. L'idempotenza confronta impostazioni `chunking.*` e firme complete degli input transcript/frame/code, quindi cambi upstream innescano una nuova generazione.
+**Esempio:**
+```
+$ videodoc chunk corso-software-x
+Project: corso-software-x
++---------------+
+| Processed | 8 |
+| Skipped   | 0 |
++---------------+
+
+$ videodoc chunk corso-software-x
+Project: corso-software-x
++---------------+
+| Processed | 0 |
+| Skipped   | 8 |
++---------------+
+```
+**Vedi anche:** [features/chunking.md](features/chunking.md)
+
+---
+
 ## doctor
 
 **Sintassi:** `videodoc doctor`

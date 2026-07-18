@@ -1665,6 +1665,8 @@ Il sistema deve considerare:
 
 È utile indicizzare anche i blocchi di codice come documenti separati, collegati al chunk principale.
 
+Nota implementativa: questa fase è implementata dal comando **`videodoc chunk`**. Il comando usa i dati strutturati già presenti in `project.db`: segmenti di trascrizione (`transcript_segments`), frame OCR (`frames.ocr_text`/`ocr_confidence`) e blocchi codice deduplicati (`code_blocks`). Produce `workdir/<video_id>/chunks/<video_id>.json`, aggiorna `metadata.json` (`chunks_path`) e sostituisce la tabella `chunks` (§31) per quel video. I chunk principali vengono creati raggruppando segmenti temporali entro `chunking.min_duration_seconds`/`max_duration_seconds` (default 90–480s), spezzando anche su pause evidenti nel parlato; ogni chunk viene arricchito con OCR e codice nello stesso intervallo, con un piccolo margine controllato da `chunking.include_nearby_frames`. In aggiunta, ogni blocco in `code_blocks` genera anche un chunk separato `source_type="code"`, così la fase embedding può indicizzare il codice come documento autonomo (§21.3). L'idempotenza confronta le impostazioni di chunking e la firma completa degli input (hash del testo transcript/OCR/codice, timestamp, hash percettivo, confidenze, `contains_code`), quindi un nuovo OCR, una nuova code extraction o una ritrascrizione forzano automaticamente il rechunk. Vedi `docs/features/chunking.md`.
+
 ---
 
 # 22. Fase 9 — Creazione degli embedding
