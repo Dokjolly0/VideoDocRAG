@@ -383,6 +383,25 @@ Project: corso-software-x
 
 ---
 
+## index-docs
+
+**Sintassi:** `videodoc index-docs <project>`
+**Descrizione:** Indicizza esplicitamente le sezioni Markdown generate (`docs/[0-9][0-9]-*.md`) in `indexes/documentation_index.json`, usando lo stesso `DocumentationIndexService` richiamato automaticamente da `ask`/`chat` in modalità `docs`. I payload hanno `source_type="generated_documentation"` e includono i riferimenti video/timestamp letti da `docs/sources/*.sources.json`, quando presenti.
+**Exit code:** 0 = indice scritto, anche con zero sezioni (indice vuoto). 1 = progetto sconosciuto, `config.yaml` non valido, indice/documentazione non leggibile, o errore di scrittura.
+**Esempio:**
+```
+$ videodoc index-docs corso-software-x
+Project: corso-software-x
++------------------------------------------------+
+| Records | 8                                    |
+| Inputs  | 1                                    |
+| Index   | .../indexes/documentation_index.json |
++------------------------------------------------+
+```
+**Vedi anche:** [features/chat.md](features/chat.md)
+
+---
+
 ## ask
 
 **Sintassi:** `videodoc ask <project> "domanda" [--source docs|raw|hybrid] [--video NAME]... [--from HH:MM:SS] [--to HH:MM:SS] [--top-k N]`

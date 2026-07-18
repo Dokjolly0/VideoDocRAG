@@ -8,6 +8,11 @@
 - Added service and CLI tests for sync/idempotency/removal/no-op behavior plus raw chat retrieval over synced codebase snippets.
 - Docs: README §15/§35, `docs/commands.md`, `RUN.md`, and `docs/features/codebase-sync.md` now document `videodoc sync-codebase`.
 
+## Unreleased — Documentation index command
+- Added `videodoc index-docs`: explicitly builds `indexes/documentation_index.json` from generated Markdown sections using the same `DocumentationIndexService` used by docs-mode `ask`/`chat`.
+- Added CLI tests for populated and empty documentation indexes plus unknown-project failure.
+- Docs: README §29, `docs/commands.md`, `RUN.md`, and `docs/features/chat.md` now document `videodoc index-docs`.
+
 ## Unreleased — Pipeline status and timestamp inspection
 - Added `videodoc status`: non-destructive project pipeline summary over `sources.yaml`, `project.db`, `workdir/`, `indexes/`, `docs/`, `exports/`, and saved chat sessions — see [features/status-inspect.md](features/status-inspect.md).
 - Added `videodoc inspect --timestamp HH:MM:SS [--video NAME]`: timestamp drill-down for transcript, frame/OCR, nearby code blocks, chunks, and generated documentation source manifests.

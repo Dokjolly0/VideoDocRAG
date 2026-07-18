@@ -13,6 +13,7 @@ from videodoc.cli.commands import (
     generate,
     ingest,
     index,
+    index_docs,
     inspect,
     init,
     link,
@@ -46,6 +47,7 @@ app.command("code")(code.code_command)
 app.command("chunk")(chunk.chunk_command)
 app.command("embed")(embed.embed_command)
 app.command("index")(index.index_command)
+app.command("index-docs")(index_docs.index_docs_command)
 app.command("ask")(ask.ask_command)
 app.command("chat")(chat.chat_command)
 app.command("status")(status.status_command)

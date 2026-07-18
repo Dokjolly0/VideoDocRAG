@@ -1,6 +1,6 @@
 # VideoDocRAG — Guida all'esecuzione
 
-Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; sincronizzazione codebase — `sync-codebase`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; sezioni Markdown — `generate`; revisione — `review`; export — `export`; chat salvata — `chat`; stato e ispezione — `status`, `inspect`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (GUI e API web — vedi `README.md`) non sono ancora implementate.
+Questa guida spiega come installare ed eseguire VideoDocRAG così com'è oggi (gestione progetti — `init`, `list`, `link`, `unlink`, `path`; scansione fonti — `scan`; ingestion video — `ingest`; sincronizzazione codebase — `sync-codebase`; estrazione audio — `extract-audio`; trascrizione — `transcribe`; frame — `frames`; OCR — `ocr`; riconoscimento codice — `code`; chunk — `chunk`; embedding — `embed`; indice vettoriale — `index`; domanda/risposta locale — `ask`; outline documentazione — `outline`; sezioni Markdown — `generate`; indice documentazione — `index-docs`; revisione — `review`; export — `export`; chat salvata — `chat`; stato e ispezione — `status`, `inspect`; più `doctor`/`setup`, diagnostica e correzione guidata dell'ambiente) su **Windows, Linux o macOS**. Per l'elenco completo di ogni comando con sintassi ed esempio di output, vedi [`docs/commands.md`](docs/commands.md). Le fasi successive della pipeline (GUI e API web — vedi `README.md`) non sono ancora implementate.
 
 Ogni sezione con un comando che differisce tra sistemi operativi mostra un blocco **Windows (PowerShell)** e un blocco **Linux/macOS (bash/zsh)** affiancati — i due comandi di shell sono praticamente identici su Linux e macOS, quindi condividono lo stesso blocco salvo dove specificato diversamente.
 
@@ -730,6 +730,25 @@ Come per l'outline, i file Markdown già esistenti vengono preservati. Usa `--fo
 videodoc generate corso-software-x --force
 ```
 
+### 5.18.1 Indicizzare la documentazione generata (`index-docs`)
+
+`ask`/`chat` in modalità `docs` costruiscono questo indice automaticamente, ma puoi generarlo esplicitamente dopo `generate`:
+
+```bash
+videodoc index-docs corso-software-x
+```
+
+```text
+Project: corso-software-x
++------------------------------------------------+
+| Records | 8                                    |
+| Inputs  | 1                                    |
+| Index   | .../indexes/documentation_index.json |
++------------------------------------------------+
+```
+
+L'indice viene scritto in `indexes/documentation_index.json` e conserva i collegamenti a video/timestamp dai manifest `docs/sources/*.sources.json`.
+
 ### 5.19 Revisionare la documentazione generata (`review`)
 
 Controlla struttura Markdown, fonti, timestamp, citazioni e codice, poi scrive un report:
@@ -1075,7 +1094,7 @@ Se resta lento, controlla `nvidia-smi`: la CPU bassa è normale quando CTranslat
 
 ## 9. Cosa non è ancora disponibile
 
-Questi step coprono gestione progetti, scansione fonti, ingestion video, sincronizzazione codebase, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale, outline, generazione sezioni Markdown, revisione automatica, export, chat salvata, stato pipeline e ispezione puntuale. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
+Questi step coprono gestione progetti, scansione fonti, ingestion video, sincronizzazione codebase, estrazione audio, trascrizione, estrazione frame, OCR, riconoscimento codice, chunking, embedding, indicizzazione vettoriale, domanda/risposta locale, outline, generazione sezioni Markdown, indice documentazione, revisione automatica, export, chat salvata, stato pipeline e ispezione puntuale. Restano futuri (vedi la roadmap completa in `README.md`, §37, e il changelog in `docs/CHANGELOG.md`):
 
 - l'interfaccia GUI (`videodoc gui`).
 
